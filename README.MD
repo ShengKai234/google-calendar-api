@@ -1,19 +1,35 @@
-Python 3.11.2
-env - virtualenv
-  # Use default python version
+# Python 3.11.2
+## env - virtualenv
+  Use default python version
+  ```shell  
   virtualenv venv
-
   # venv setting env name
   # use 3.11.2
   virtualenv -p ~/.pyenv/versions/3.11.2/bin/python venv
-Entry virtual env
-  source venv/bin/activate	
-exist virtual env
+  ```
+
+  Entry virtual env
+  ```shell  
+  source venv/bin/activate
+  ```
+
+  exist virtual env
+  ```shell  
   deactivate
-Export requirements
+  ```
+
+  Export requirements
+  ```shell
   pip freeze > requirements.txt
-Install requirements
+  ```
+
+  Install requirements
+  ```shell
   pip install -r requirements.txt	
-Freeze maintance
+  ```
+  
+  Freeze maintance
+  ```shell
   pip install -r requirements-to-freeze.txt --upgrade
   pip freeze > requirements.txt
+  ```
