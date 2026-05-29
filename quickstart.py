@@ -19,7 +19,6 @@ def main():
   # The file token.json stores the user's access and refresh tokens, and is
   # created automatically when the authorization flow completes for the first
   # time.
-  print("==========" + str(os.path.exists("token.json")))
   if os.path.exists("token.json"):
     creds = Credentials.from_authorized_user_file("token.json", SCOPES)
   # If there are no (valid) credentials available, let the user log in.
@@ -41,39 +40,59 @@ def main():
     # Get all calendars
     calendars_result = service.calendarList().list().execute()
     calendars = calendars_result.get("items", [])
-    
-    if not calendars:
-      print("No exist calendar...")
-      return
-    
-    events = []
-    for calendar in calendars:
-      print(f"- {calendar['summary']} (ID: {calendar['id']})")
 
-      # Call the Calendar API with calendar id
-      now = datetime.datetime.utcnow()  # 'Z' indicates UTC time
-      end_time = now + datetime.timedelta(days=7)
+    if not calendars:
+      print("No calendars found.")
+      return
+
+    print("All calendars:")
+    for calendar in calendars:
+      print(f"  [{calendar.get('accessRole')}] {calendar['summary']} (ID: {calendar['id']})")
+
+    # Only fetch events from calendars the user owns (exclude shared/work calendars)
+    my_calendars = [c for c in calendars if c.get("accessRole") == "owner"]
+
+    if not my_calendars:
+      print("No owned calendars found.")
+      return
+
+    print(f"\nFetching events from {len(my_calendars)} owned calendar(s):")
+    for c in my_calendars:
+      print(f"  - {c['summary']}")
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    end_time = now + datetime.timedelta(days=7)
+
+    events = []
+    for calendar in my_calendars:
       events_result = (
           service.events()
           .list(
             calendarId=calendar['id'],
-            timeMin=now.isoformat() + "Z",
-            timeMax=end_time.isoformat() + "Z",
+            timeMin=now.isoformat(),
+            timeMax=end_time.isoformat(),
             maxResults=100,
             singleEvents=True,
             orderBy="startTime",
           )
           .execute()
       )
-      events += events_result.get("items", [])
+      for event in events_result.get("items", []):
+        event["_calendarName"] = calendar["summary"]
+        events.append(event)
 
     if not events:
-      print("No upcoming events found.")
+      print("\nNo upcoming events found.")
       return
-    
+
+    events.sort(key=lambda e: e["start"].get("dateTime", e["start"].get("date")))
+
+    print("\nUpcoming events (next 7 days):")
     for event in events:
       start = event["start"].get("dateTime", event["start"].get("date"))
-      print(start, event["summary"])
+      title = event.get("summary", "(no title)")
+      cal_name = event["_calendarName"]
+      print(f"  {start}  [{cal_name}]  {title}")
 
   except HttpError as error:
     print(f"An error occurred: {error}")

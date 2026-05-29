@@ -1,0 +1,8 @@
+[auth]
+credentials_file = "credentials.json"
+token_file = "token.json"
+
+[calendar]
+days_ahead = 7
+max_results_per_calendar = 100
+include_access_roles = ["owner"]
