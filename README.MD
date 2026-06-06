@@ -33,3 +33,15 @@
   pip install -r requirements-to-freeze.txt --upgrade
   pip freeze > requirements.txt
   ```
+
+## Hardware
+### Raspberry Pi
+- Raspberry Pi 4 Model B Rev 1.5 8GB
+- MicroSD Card (64GB)
+
+### E-Paper
+- [7.3inch e-Paper HAT (F)](https://www.waveshare.net/shop/7.3inch-e-Paper-HAT-F.htm)
+
+## Install OS
+- Raspberry Pi OS Lite (64-bit)
+## 
