@@ -41,6 +41,14 @@
 
 ### E-Paper
 - [7.3inch e-Paper HAT (F)](https://www.waveshare.net/shop/7.3inch-e-Paper-HAT-F.htm)
+- Python Tool
+    ```shell
+    sudo apt install -y swig libgpiod-dev liblgpio-dev python3-lgpio
+    pip install lgpio Pillow
+
+    # test example
+    python3 /e-paper/RaspberryPi_JetsonNano/examples/epd_7in3e_test.py
+    ```
 
 ## Install OS
 - Raspberry Pi OS Lite (64-bit)
