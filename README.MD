@@ -37,6 +37,7 @@
 ## Hardware
 ### Raspberry Pi
 - Raspberry Pi 4 Model B Rev 1.5 8GB
+- Raspberry Pi Zero 2 W (Product)
 - MicroSD Card (64GB)
 
 ### E-Paper
@@ -52,4 +53,5 @@
 
 ## Install OS
 - Raspberry Pi OS Lite (64-bit)
+
 ## 
