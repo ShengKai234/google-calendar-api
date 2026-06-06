@@ -5,6 +5,7 @@ from googleapiclient.errors import HttpError
 
 from auth import get_credentials
 from calendar_client import fetch_events
+from renderer import render
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)
@@ -38,6 +39,12 @@ def main() -> None:
         log.info("\nUpcoming events (next %d days):", config["calendar"]["days_ahead"])
         for event in events:
             print(f"  {event.start}  [{event.calendar_name}]  {event.title}")
+
+        display_cfg = config.get("display", {})
+        output_path = display_cfg.get("output_path", "preview.png")
+        font_path = display_cfg.get("font_path", "")
+        render(events, output_path=output_path, font_path=font_path)
+        log.info("Preview saved to %s", output_path)
 
     except HttpError as error:
         log.error("API error: %s", error)

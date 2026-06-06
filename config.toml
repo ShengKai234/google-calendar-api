@@ -6,3 +6,7 @@ token_file = "token.json"
 days_ahead = 7
 max_results_per_calendar = 100
 include_access_roles = ["owner"]
+
+[display]
+output_path = "preview.png"
+font_path = ""  # Leave empty to auto-detect system font
