@@ -7,14 +7,14 @@ echo "=== gcal-epd setup ==="
 echo "Project: $PROJECT_DIR"
 echo ""
 
-# --- 確認在 Raspberry Pi 上執行 ---
+# --- Verify running on Raspberry Pi ---
 if ! grep -q "Raspberry Pi" /proc/cpuinfo 2>/dev/null; then
     echo "Warning: This script is intended for Raspberry Pi."
     read -rp "Continue anyway? [y/N] " confirm
     case "$confirm" in [Yy]) ;; *) exit 1 ;; esac
 fi
 
-# --- 系統套件 ---
+# --- System packages ---
 echo "[1/5] Installing system dependencies..."
 sudo apt-get update -q
 sudo apt-get install -y python3-venv python3-dev
@@ -30,7 +30,7 @@ else
     echo "      SPI enabled."
 fi
 
-# --- 虛擬環境 ---
+# --- Virtual environment ---
 echo "[3/5] Setting up Python virtual environment (.venv)..."
 cd "$PROJECT_DIR"
 if [ ! -d ".venv" ]; then
@@ -40,14 +40,14 @@ else
     echo "      .venv already exists, skipping."
 fi
 
-# --- Python 套件 ---
+# --- Python packages ---
 echo "[4/5] Installing Python packages..."
 source "$PROJECT_DIR/.venv/bin/activate"
 pip install --quiet -e .
 pip install --quiet RPi.GPIO spidev gpiozero lgpio
 echo "      Done."
 
-# --- 確認 credentials.json ---
+# --- Check credentials ---
 echo "[5/5] Checking credentials..."
 if [ -f "$PROJECT_DIR/credentials.json" ]; then
     echo "      credentials.json found."
