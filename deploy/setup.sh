@@ -11,7 +11,7 @@ echo ""
 if ! grep -q "Raspberry Pi" /proc/cpuinfo 2>/dev/null; then
     echo "Warning: This script is intended for Raspberry Pi."
     read -rp "Continue anyway? [y/N] " confirm
-    [[ "$confirm" =~ ^[Yy]$ ]] || exit 1
+    case "$confirm" in [Yy]) ;; *) exit 1 ;; esac
 fi
 
 # --- 系統套件 ---
@@ -33,7 +33,7 @@ fi
 # --- 虛擬環境 ---
 echo "[3/5] Setting up Python virtual environment (.venv)..."
 cd "$PROJECT_DIR"
-if [[ ! -d ".venv" ]]; then
+if [ ! -d ".venv" ]; then
     python3 -m venv .venv
     echo "      Created .venv"
 else
@@ -49,7 +49,7 @@ echo "      Done."
 
 # --- 確認 credentials.json ---
 echo "[5/5] Checking credentials..."
-if [[ -f "$PROJECT_DIR/credentials.json" ]]; then
+if [ -f "$PROJECT_DIR/credentials.json" ]; then
     echo "      credentials.json found."
 else
     echo ""
@@ -58,7 +58,7 @@ else
     echo "      $PROJECT_DIR/credentials.json"
 fi
 
-if [[ -f "$PROJECT_DIR/token.json" ]]; then
+if [ -f "$PROJECT_DIR/token.json" ]; then
     echo "      token.json found."
 else
     echo ""

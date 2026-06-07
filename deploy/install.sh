@@ -12,7 +12,7 @@ echo ""
 if ! grep -q "Raspberry Pi" /proc/cpuinfo 2>/dev/null; then
     echo "Warning: This script is intended for Raspberry Pi."
     read -rp "Continue anyway? [y/N] " confirm
-    [[ "$confirm" =~ ^[Yy]$ ]] || exit 1
+    case "$confirm" in [Yy]) ;; *) exit 1 ;; esac
 fi
 
 # --- 複製 systemd 設定檔 ---
@@ -34,7 +34,7 @@ sudo systemctl start  "$SERVICE_NAME.timer"
 echo "[4/4] Enabling hardware watchdog..."
 BOOT_CONFIG="/boot/firmware/config.txt"
 # 舊版 Pi OS 路徑
-[[ -f "$BOOT_CONFIG" ]] || BOOT_CONFIG="/boot/config.txt"
+[ -f "$BOOT_CONFIG" ] || BOOT_CONFIG="/boot/config.txt"
 
 if ! grep -q "dtparam=watchdog=on" "$BOOT_CONFIG"; then
     echo "dtparam=watchdog=on" | sudo tee -a "$BOOT_CONFIG" > /dev/null
@@ -62,4 +62,4 @@ echo "  停用排程    : sudo systemctl disable $SERVICE_NAME.timer"
 echo ""
 echo "Note: Reboot required for watchdog to take effect."
 read -rp "Reboot now? [y/N] " reboot_now
-[[ "$reboot_now" =~ ^[Yy]$ ]] && sudo reboot
+case "$reboot_now" in [Yy]) sudo reboot ;; esac
