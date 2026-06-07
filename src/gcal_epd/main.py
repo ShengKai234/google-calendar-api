@@ -1,18 +1,22 @@
 import logging
 import tomllib
+from pathlib import Path
 
 from googleapiclient.errors import HttpError
 
-from auth import get_credentials
-from calendar_client import fetch_events
-from renderer import render
+from gcal_epd.auth import get_credentials
+from gcal_epd.calendar_client import fetch_events
+from gcal_epd.render.draw import render
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)
 
+# Config is always loaded relative to the project root (two levels above this file)
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
+
 
 def load_config(path: str = "config.toml") -> dict:
-    with open(path, "rb") as f:
+    with open(_PROJECT_ROOT / path, "rb") as f:
         return tomllib.load(f)
 
 
@@ -20,8 +24,8 @@ def main() -> None:
     config = load_config()
 
     creds = get_credentials(
-        credentials_file=config["auth"]["credentials_file"],
-        token_file=config["auth"]["token_file"],
+        credentials_file=str(_PROJECT_ROOT / config["auth"]["credentials_file"]),
+        token_file=str(_PROJECT_ROOT / config["auth"]["token_file"]),
     )
 
     try:
@@ -38,10 +42,10 @@ def main() -> None:
 
         log.info("\nUpcoming events (next %d days):", config["calendar"]["days_ahead"])
         for event in events:
-            print(f"  {event.start}  [{event.calendar_name}]  {event.title}")
+            log.info("  %s  [%s]  %s", event.start, event.calendar_name, event.title)
 
         display_cfg = config.get("display", {})
-        output_path = display_cfg.get("output_path", "preview.png")
+        output_path = str(_PROJECT_ROOT / display_cfg.get("output_path", "preview.png"))
         font_path = display_cfg.get("font_path", "")
         render(events, output_path=output_path, font_path=font_path)
         log.info("Preview saved to %s", output_path)
