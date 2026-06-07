@@ -1,0 +1,15 @@
+[Unit]
+Description=Run Google Calendar e-Paper Display every hour
+
+[Timer]
+# 每小時的第 0 分執行
+OnCalendar=hourly
+
+# 開機時若上次錯過了排程，立刻補跑一次
+Persistent=true
+
+# 避免所有 hourly 服務同時啟動，隨機延遲最多 60 秒
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

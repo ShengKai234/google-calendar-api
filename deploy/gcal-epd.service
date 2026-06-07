@@ -1,0 +1,20 @@
+[Unit]
+Description=Google Calendar e-Paper Display
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=admin
+WorkingDirectory=/home/admin/google-calendar-api
+
+ExecStart=/home/admin/google-calendar-api/.venv/bin/python -m gcal_epd.main --display
+
+# 超過 120 秒強制中止（防止 API 或螢幕刷新卡住）
+TimeoutStartSec=120
+
+# 失敗時不自動重試（由 timer 下次排程再跑）
+Restart=no
+
+StandardOutput=journal
+StandardError=journal
