@@ -189,19 +189,25 @@ sudo systemctl start gcal-epd.service
 
 ## Schedule
 
-Default: **every hour**.  
+Default: **07:00 and 19:00 (Taiwan time)**.  
 To change, edit `deploy/gcal-epd.timer`:
 
 ```ini
-# Every hour (default)
+# 07:00 and 19:00 (default)
+OnCalendar=*-*-* 07:00:00
+OnCalendar=*-*-* 19:00:00
+
+# Every hour
 OnCalendar=hourly
 
-# Every day at 07:00
+# Every day at 07:00 only
 OnCalendar=*-*-* 07:00:00
-
-# Every day at 07:00 and 19:00
-OnCalendar=*-*-* 07,19:00:00
 ```
+
+> Make sure the Raspberry Pi timezone is set to `Asia/Taipei`:
+> ```bash
+> sudo timedatectl set-timezone Asia/Taipei
+> ```
 
 After editing, redeploy:
 
