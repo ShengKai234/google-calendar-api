@@ -1,3 +1,4 @@
+import argparse
 import logging
 import tomllib
 from pathlib import Path
@@ -21,6 +22,10 @@ def load_config(path: str = "config.toml") -> dict:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Fetch Google Calendar and render to e-ink display")
+    parser.add_argument("--display", action="store_true", help="Push rendered image to e-ink display (Raspberry Pi only)")
+    args = parser.parse_args()
+
     config = load_config()
 
     creds = get_credentials(
@@ -47,8 +52,13 @@ def main() -> None:
         display_cfg = config.get("display", {})
         output_path = str(_PROJECT_ROOT / display_cfg.get("output_path", "preview.png"))
         font_path = display_cfg.get("font_path", "")
-        render(events, output_path=output_path, font_path=font_path)
+
+        img = render(events, output_path=output_path, font_path=font_path)
         log.info("Preview saved to %s", output_path)
+
+        if args.display:
+            from gcal_epd.epd import push_to_display
+            push_to_display(img)
 
     except HttpError as error:
         log.error("API error: %s", error)
