@@ -1,0 +1,23 @@
+[Unit]
+Description=Google Calendar e-Paper Display
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=admin
+WorkingDirectory=/home/admin/google-calendar-api
+
+ExecStart=/home/admin/google-calendar-api/.venv/bin/python -m gcal_epd.main --display
+
+# Shutdown after display refresh (e-ink retains image when powered off)
+ExecStartPost=/sbin/shutdown -h now
+
+# Kill if taking longer than 120 seconds
+TimeoutStartSec=120
+
+# Do not retry on failure (timer will run again at next scheduled time)
+Restart=no
+
+StandardOutput=journal
+StandardError=journal

@@ -1,0 +1,13 @@
+[Unit]
+Description=Run Google Calendar e-Paper Display at 07:00 and 19:00
+
+[Timer]
+# Run at 07:00 and 19:00 Taiwan time (timezone explicit, independent of system timezone)
+OnCalendar=*-*-* 07:00:00 Asia/Taipei
+OnCalendar=*-*-* 19:00:00 Asia/Taipei
+
+# Run immediately if a scheduled run was missed (e.g. after reboot)
+Persistent=true
+
+[Install]
+WantedBy=timers.target
