@@ -2,9 +2,9 @@
 Description=Run Google Calendar e-Paper Display at 07:00 and 19:00
 
 [Timer]
-# Run at 07:00 and 19:00 Taiwan time (ensure Pi timezone is set to Asia/Taipei)
-OnCalendar=*-*-* 07:00:00
-OnCalendar=*-*-* 19:00:00
+# Run at 07:00 and 19:00 Taiwan time (timezone explicit, independent of system timezone)
+OnCalendar=*-*-* 07:00:00 Asia/Taipei
+OnCalendar=*-*-* 19:00:00 Asia/Taipei
 
 # Run immediately if a scheduled run was missed (e.g. after reboot)
 Persistent=true
