@@ -11,6 +11,7 @@ from gcal_epd.render.layout import (
     HEADER_H,
     PADDING,
     PALETTE,
+    TW_TZ,
     WIDTH,
     HEIGHT,
     build_layout,
@@ -43,16 +44,17 @@ def _truncate(draw: ImageDraw.ImageDraw, text: str, font, max_width: int) -> str
 
 
 def _draw_header(draw: ImageDraw.ImageDraw, fonts: dict) -> None:
+    now_tw = datetime.datetime.now(TW_TZ)
     draw.rectangle([(0, 0), (WIDTH, HEADER_H)], fill=PALETTE["black"])
     draw.text(
         (PADDING, 12),
-        datetime.date.today().strftime("%A, %B %-d"),
+        now_tw.strftime("%A, %B %-d"),
         font=fonts["xl"],
         fill=PALETTE["white"],
     )
     draw.text(
         (WIDTH - 140, HEADER_H - 22),
-        f"Updated {datetime.datetime.now().strftime('%H:%M')}",
+        f"Updated {now_tw.strftime('%H:%M')}",
         font=fonts["sm"],
         fill=PALETTE["white"],
     )

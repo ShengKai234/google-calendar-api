@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 
 from gcal_epd.calendar_client import CalendarEvent
 
+TW_TZ = datetime.timezone(datetime.timedelta(hours=8))
+
 # --- Display geometry ---
 WIDTH = 800
 HEIGHT = 480
@@ -57,6 +59,10 @@ class DayBlock:
 def _parse_start(start_str: str) -> tuple[datetime.date, str]:
     if "T" in start_str:
         dt = datetime.datetime.fromisoformat(start_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=TW_TZ)
+        else:
+            dt = dt.astimezone(TW_TZ)
         return dt.date(), dt.strftime("%H:%M")
     return datetime.date.fromisoformat(start_str), ""
 
@@ -67,7 +73,7 @@ def _assign_cal_colors(events: list[CalendarEvent]) -> dict[str, tuple[int, int,
 
 
 def build_layout(events: list[CalendarEvent]) -> list[DayBlock]:
-    today = datetime.date.today()
+    today = datetime.datetime.now(TW_TZ).date()
     cal_color = _assign_cal_colors(events)
 
     by_day: defaultdict[datetime.date, list[tuple[str, CalendarEvent]]] = defaultdict(list)
