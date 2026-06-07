@@ -9,4 +9,4 @@ include_access_roles = ["owner"]
 
 [display]
 output_path = "preview.png"
-font_path = ""  # Leave empty to auto-detect system font
+font_path = "assets/fonts/NotoSansCJKtc-Regular.otf"

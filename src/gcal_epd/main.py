@@ -51,7 +51,8 @@ def main() -> None:
 
         display_cfg = config.get("display", {})
         output_path = str(_PROJECT_ROOT / display_cfg.get("output_path", "preview.png"))
-        font_path = display_cfg.get("font_path", "")
+        raw_font = display_cfg.get("font_path", "")
+        font_path = str(_PROJECT_ROOT / raw_font) if raw_font and not raw_font.startswith("/") else raw_font
 
         img = render(events, output_path=output_path, font_path=font_path)
         log.info("Preview saved to %s", output_path)
