@@ -42,7 +42,7 @@ fi
 
 # --- Python packages ---
 echo "[4/5] Installing Python packages..."
-source "$PROJECT_DIR/.venv/bin/activate"
+. "$PROJECT_DIR/.venv/bin/activate"
 pip install --quiet -e .
 pip install --quiet -r "$PROJECT_DIR/requirements.txt"
 echo "      Done."
