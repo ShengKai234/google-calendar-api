@@ -10,9 +10,9 @@ PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Activate venv
 if [ -d "$PROJECT_DIR/.venv" ]; then
-    source "$PROJECT_DIR/.venv/bin/activate"
+    . "$PROJECT_DIR/.venv/bin/activate"
 elif [ -d "$PROJECT_DIR/venv" ]; then
-    source "$PROJECT_DIR/venv/bin/activate"
+    . "$PROJECT_DIR/venv/bin/activate"
 else
     echo "Error: no virtual environment found (.venv or venv)."
     exit 1
