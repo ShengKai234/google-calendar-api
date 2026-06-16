@@ -24,4 +24,6 @@ urllib3==2.2.1
 lgpio
 Pillow
 spidev
-gpiozero 
+gpiozero
+tomli-w
+qrcode

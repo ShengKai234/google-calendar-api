@@ -168,4 +168,4 @@ test_preview.png
 # Google calendar
 client_secret_*
 token.json
-credentials.json
+credentials.jsonservice_account.json

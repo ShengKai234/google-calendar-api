@@ -42,36 +42,29 @@ fi
 
 # --- Python packages ---
 echo "[4/5] Installing Python packages..."
-source "$PROJECT_DIR/.venv/bin/activate"
+. "$PROJECT_DIR/.venv/bin/activate"
 pip install --quiet -e .
-pip install --quiet RPi.GPIO spidev gpiozero lgpio
+pip install --quiet -r "$PROJECT_DIR/requirements.txt"
 echo "      Done."
 
 # --- Check credentials ---
 echo "[5/5] Checking credentials..."
-if [ -f "$PROJECT_DIR/credentials.json" ]; then
-    echo "      credentials.json found."
+if [ -f "$PROJECT_DIR/service_account.json" ]; then
+    echo "      service_account.json found."
 else
     echo ""
-    echo "  [!] credentials.json not found."
-    echo "      Download it from Google Cloud Console and place it at:"
-    echo "      $PROJECT_DIR/credentials.json"
-fi
-
-if [ -f "$PROJECT_DIR/token.json" ]; then
-    echo "      token.json found."
-else
-    echo ""
-    echo "  [!] token.json not found."
-    echo "      Generate it on a machine with a browser:"
-    echo "        source .venv/bin/activate"
-    echo "        python -m gcal_epd.main"
-    echo "      Then copy token.json to this Pi:"
-    echo "        scp token.json admin@<pi-ip>:$PROJECT_DIR/"
+    echo "  [!] service_account.json not found."
+    echo "      Copy it from your laptop:"
+    echo "        scp service_account.json admin@<pi-ip>:$PROJECT_DIR/"
 fi
 
 echo ""
 echo "=== Setup complete ==="
 echo ""
-echo "Next step — install systemd timer:"
-echo "  bash deploy/install.sh"
+echo "Next steps:"
+echo "  1. Copy service_account.json to this Pi (if not done):"
+echo "       scp service_account.json admin@<pi-ip>:$PROJECT_DIR/"
+echo "  2. Run calendar sharing setup (draws QR on e-paper):"
+echo "       bash deploy/auth.sh --display"
+echo "  3. Install systemd timer for automatic refresh:"
+echo "       bash deploy/install.sh"

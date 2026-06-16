@@ -8,9 +8,15 @@ version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
     "google-api-python-client",
-    "google-auth-oauthlib",
+    "google-auth",
+    "qrcode",
+    "tomli-w",
     "Pillow",
 ]
+
+[project.scripts]
+gcal-epd = "gcal_epd.main:main"
+gcal-epd-setup = "gcal_epd.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

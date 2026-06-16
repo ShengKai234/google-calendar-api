@@ -12,7 +12,6 @@ from gcal_epd.render.draw import render
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)
 
-# Config is always loaded relative to the project root (two levels above this file)
 _PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 
@@ -24,26 +23,34 @@ def load_config(path: str = "config.toml") -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Fetch Google Calendar and render to e-ink display")
     parser.add_argument("--display", action="store_true", help="Push rendered image to e-ink display (Raspberry Pi only)")
+    parser.add_argument("--setup", action="store_true", help="Run one-time calendar sharing setup")
+    parser.add_argument("--email", help="Google Calendar email to use during setup (skips interactive prompt)")
     args = parser.parse_args()
 
     config = load_config()
+    config_path = _PROJECT_ROOT / "config.toml"
 
-    creds = get_credentials(
-        credentials_file=str(_PROJECT_ROOT / config["auth"]["credentials_file"]),
-        token_file=str(_PROJECT_ROOT / config["auth"]["token_file"]),
-    )
+    # Run setup if requested or if no calendars are configured yet
+    calendar_ids = config["calendar"].get("calendar_ids", [])
+    if args.setup or not calendar_ids:
+        from gcal_epd.setup import run_setup
+        run_setup(config, config_path, display=args.display, email=args.email)
+        config = load_config()  # reload updated calendar_ids
+        calendar_ids = config["calendar"].get("calendar_ids", [])
+
+    sa_file = str(_PROJECT_ROOT / config["auth"]["service_account_file"])
+    creds = get_credentials(sa_file)
 
     try:
         events = fetch_events(
             creds=creds,
-            include_access_roles=config["calendar"]["include_access_roles"],
+            calendar_ids=calendar_ids,
             days_ahead=config["calendar"]["days_ahead"],
             max_results_per_calendar=config["calendar"]["max_results_per_calendar"],
         )
 
         if not events:
             log.info("No upcoming events found.")
-            return
 
         log.info("\nUpcoming events (next %d days):", config["calendar"]["days_ahead"])
         for event in events:

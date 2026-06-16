@@ -1,25 +1,18 @@
+import json
 from pathlib import Path
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2 import service_account
 
 SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
 
 
-def get_credentials(credentials_file: str, token_file: str) -> Credentials:
-    creds = None
-    token_path = Path(token_file)
+def get_credentials(service_account_file: str) -> service_account.Credentials:
+    return service_account.Credentials.from_service_account_file(
+        service_account_file,
+        scopes=SCOPES,
+    )
 
-    if token_path.exists():
-        creds = Credentials.from_authorized_user_file(token_file, SCOPES)
 
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(credentials_file, SCOPES)
-            creds = flow.run_local_server(port=0)
-        token_path.write_text(creds.to_json())
-
-    return creds
+def get_service_account_email(service_account_file: str) -> str:
+    data = json.loads(Path(service_account_file).read_text())
+    return data["client_email"]
