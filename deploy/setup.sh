@@ -44,7 +44,7 @@ fi
 echo "[4/5] Installing Python packages..."
 source "$PROJECT_DIR/.venv/bin/activate"
 pip install --quiet -e .
-pip install --quiet RPi.GPIO spidev gpiozero lgpio
+pip install --quiet -r "$PROJECT_DIR/requirements.txt"
 echo "      Done."
 
 # --- Check credentials ---
