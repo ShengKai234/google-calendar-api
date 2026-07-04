@@ -5,9 +5,10 @@ from pathlib import Path
 
 from googleapiclient.errors import HttpError
 
-from gcal_epd.auth import get_credentials
-from gcal_epd.calendar_client import fetch_events
-from gcal_epd.render.draw import render
+from gcal_epd.infrastructure.google_calendar.auth import get_credentials
+from gcal_epd.infrastructure.google_calendar.repository import GoogleCalendarRepository
+from gcal_epd.infrastructure.open_meteo.repository import OpenMeteoRepository
+from gcal_epd.application.display_service import run as run_display
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)
@@ -20,6 +21,27 @@ def load_config(path: str = "config.toml") -> dict:
         return tomllib.load(f)
 
 
+def _build_event_repos(config: dict) -> list[GoogleCalendarRepository]:
+    repos = []
+    for source in config.get("sources", []):
+        if source["type"] == "google_calendar":
+            sa_file = str(_PROJECT_ROOT / source["service_account_file"])
+            creds = get_credentials(sa_file)
+            repos.append(GoogleCalendarRepository(creds, source.get("calendar_ids", [])))
+    return repos
+
+
+def _build_weather_repo(config: dict) -> OpenMeteoRepository | None:
+    for source in config.get("sources", []):
+        if source["type"] == "open_meteo":
+            return OpenMeteoRepository(
+                latitude=source["latitude"],
+                longitude=source["longitude"],
+                location=source.get("location", "Taipei"),
+            )
+    return None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Fetch Google Calendar and render to e-ink display")
     parser.add_argument("--display", action="store_true", help="Push rendered image to e-ink display (Raspberry Pi only)")
@@ -30,44 +52,24 @@ def main() -> None:
     config = load_config()
     config_path = _PROJECT_ROOT / "config.toml"
 
-    # Run setup if requested or if no calendars are configured yet
-    calendar_ids = config["calendar"].get("calendar_ids", [])
-    if args.setup or not calendar_ids:
-        from gcal_epd.setup import run_setup
-        run_setup(config, config_path, display=args.display, email=args.email)
-        config = load_config()  # reload updated calendar_ids
-        calendar_ids = config["calendar"].get("calendar_ids", [])
+    gcal_sources = [s for s in config.get("sources", []) if s["type"] == "google_calendar"]
+    calendar_ids = [cid for s in gcal_sources for cid in s.get("calendar_ids", [])]
 
-    sa_file = str(_PROJECT_ROOT / config["auth"]["service_account_file"])
-    creds = get_credentials(sa_file)
+    if args.setup or not calendar_ids:
+        from gcal_epd.infrastructure.google_calendar.setup import run_setup
+        run_setup(config, config_path, display=args.display, email=args.email)
+        config = load_config()
 
     try:
-        events = fetch_events(
-            creds=creds,
-            calendar_ids=calendar_ids,
-            days_ahead=config["calendar"]["days_ahead"],
-            max_results_per_calendar=config["calendar"]["max_results_per_calendar"],
+        event_repos = _build_event_repos(config)
+        weather_repo = _build_weather_repo(config)
+        run_display(
+            event_repos=event_repos,
+            weather_repo=weather_repo,
+            config=config,
+            project_root=_PROJECT_ROOT,
+            push_display=args.display,
         )
-
-        if not events:
-            log.info("No upcoming events found.")
-
-        log.info("\nUpcoming events (next %d days):", config["calendar"]["days_ahead"])
-        for event in events:
-            log.info("  %s  [%s]  %s", event.start, event.calendar_name, event.title)
-
-        display_cfg = config.get("display", {})
-        output_path = str(_PROJECT_ROOT / display_cfg.get("output_path", "preview.png"))
-        raw_font = display_cfg.get("font_path", "")
-        font_path = str(_PROJECT_ROOT / raw_font) if raw_font and not raw_font.startswith("/") else raw_font
-
-        img = render(events, output_path=output_path, font_path=font_path)
-        log.info("Preview saved to %s", output_path)
-
-        if args.display:
-            from gcal_epd.epd import push_to_display
-            push_to_display(img)
-
     except HttpError as error:
         log.error("API error: %s", error)
 

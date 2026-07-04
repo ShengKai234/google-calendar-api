@@ -7,7 +7,7 @@ import datetime
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from gcal_epd.calendar_client import CalendarEvent
+from gcal_epd.domain.event import CalendarEvent
 
 TW_TZ = datetime.timezone(datetime.timedelta(hours=8))
 

@@ -20,3 +20,10 @@ gcal-epd-setup = "gcal_epd.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-mock"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

@@ -8,45 +8,48 @@ from pathlib import Path
 
 import tomli_w
 
-from gcal_epd.auth import get_credentials, get_service_account_email
-from gcal_epd.calendar_client import check_calendar_access
+from gcal_epd.infrastructure.google_calendar.auth import get_credentials, get_service_account_email
+from gcal_epd.infrastructure.google_calendar.repository import GoogleCalendarRepository
 
 log = logging.getLogger(__name__)
 
-_PROJECT_ROOT = Path(__file__).parent.parent.parent
-_POLL_INTERVAL = 30  # seconds between access checks
-_POLL_TIMEOUT = 600  # 10 minutes
+# setup.py is at: src/gcal_epd/infrastructure/google_calendar/setup.py
+# .parent = google_calendar/, .parent = infrastructure/, .parent = gcal_epd/,
+# .parent = src/, .parent = e-pages/ (project root) → 5 levels up
+_PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
+_POLL_INTERVAL = 30
+_POLL_TIMEOUT = 600
 
 
 def run_setup(config: dict, config_path: Path, display: bool = False, email: str | None = None) -> None:
-    """
-    Interactive setup:
-      1. Show QR code + service account email on e-paper and terminal
-      2. Wait for user to share their Google Calendar
-      3. Poll until access is confirmed
-      4. Save calendar_id to config.toml
-    """
-    sa_file = str(_PROJECT_ROOT / config["auth"]["service_account_file"])
+    source_cfg = next(
+        (s for s in config.get("sources", []) if s["type"] == "google_calendar"),
+        None,
+    )
+    if source_cfg is None:
+        raise ValueError("No google_calendar source found in config.")
+
+    sa_file = str(_PROJECT_ROOT / source_cfg["service_account_file"])
     sa_email = get_service_account_email(sa_file)
     creds = get_credentials(sa_file)
 
-    # Render setup screen to e-paper (Pi only)
     if display:
         _push_setup_screen(sa_email, config)
 
-    # Print to terminal as well
     _print_setup_instructions(sa_email)
 
     user_email = email or input("Enter your Google Calendar email address: ").strip()
     if not user_email:
         raise ValueError("Email cannot be empty.")
 
+    repo = GoogleCalendarRepository(creds, [user_email])
+
     print(f"\nPolling for calendar access every {_POLL_INTERVAL}s (up to {_POLL_TIMEOUT // 60} min)...")
     print("Share your calendar then wait — checking", end="", flush=True)
 
     deadline = time.monotonic() + _POLL_TIMEOUT
     while time.monotonic() < deadline:
-        if check_calendar_access(creds, user_email):
+        if repo.check_access(user_email):
             print(" ✓")
             break
         print(".", end="", flush=True)
@@ -58,7 +61,7 @@ def run_setup(config: dict, config_path: Path, display: bool = False, email: str
             f"  {sa_email}"
         )
 
-    _save_calendar_ids(config_path, [user_email])
+    _save_calendar_ids(config_path, source_cfg, [user_email])
     log.info("Saved calendar_ids to %s", config_path)
 
     if display:
@@ -98,10 +101,13 @@ def _resolve_font(display_cfg: dict) -> str:
     return raw
 
 
-def _save_calendar_ids(config_path: Path, calendar_ids: list[str]) -> None:
+def _save_calendar_ids(config_path: Path, source_cfg: dict, calendar_ids: list[str]) -> None:
     with open(config_path, "rb") as f:
         config = tomllib.load(f)
-    config["calendar"]["calendar_ids"] = calendar_ids
+    for source in config.get("sources", []):
+        if source.get("type") == "google_calendar":
+            source["calendar_ids"] = calendar_ids
+            break
     with open(config_path, "wb") as f:
         tomli_w.dump(config, f)
 
