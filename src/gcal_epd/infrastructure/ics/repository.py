@@ -18,6 +18,12 @@ from gcal_epd.domain.event import CalendarEvent
 
 log = logging.getLogger(__name__)
 
+# requests/urllib3 logs the full request line at DEBUG level, which would put
+# the feed token straight into the systemd journal whenever debug logging is
+# on. A feed URL is a bearer token, so hold that logger above DEBUG no matter
+# what level the application selects.
+logging.getLogger("urllib3.connectionpool").setLevel(logging.INFO)
+
 DEFAULT_TIMEOUT = 20
 _USER_AGENT = "gcal-epd/1.0"
 
@@ -91,25 +97,37 @@ class ICSRepository:
         host = urlsplit(self._url).netloc or "unknown host"
         return f"{self._name or 'feed'} ({host})"
 
+    def fetch_raw(self) -> bytes:
+        """Fetch the feed, raising on failure.
+
+        fetch_events deliberately swallows errors so one dead feed cannot
+        take the whole render down. Callers that need to *know* whether a
+        feed works — onboarding, validating a URL a user just typed — use
+        this instead, because "no events" and "unreachable" are different
+        answers and an empty calendar is perfectly legitimate.
+        """
+        response = requests.get(
+            self._url,
+            timeout=self._timeout,
+            headers={"User-Agent": _USER_AGENT},
+        )
+        response.raise_for_status()
+        return response.content
+
     def fetch_events(self, days_ahead: int, max_results: int) -> list[CalendarEvent]:
         try:
-            response = requests.get(
-                self._url,
-                timeout=self._timeout,
-                headers={"User-Agent": _USER_AGENT},
-            )
-            response.raise_for_status()
+            raw = self.fetch_raw()
         except Exception as e:
-            log.warning("Could not reach calendar feed %s: %s", self._log_label, e)
+            log.warning("Could not reach %s: %s", self._log_label, e)
             return []
 
         try:
             return events_from_ics(
-                response.content,
+                raw,
                 days_ahead=days_ahead,
                 max_results=max_results,
                 name=self._name,
             )
         except Exception as e:
-            log.warning("Could not parse calendar feed %s: %s", self._log_label, e)
+            log.warning("Could not parse %s: %s", self._log_label, e)
             return []

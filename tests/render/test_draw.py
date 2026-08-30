@@ -152,7 +152,8 @@ def test_render_many_events_does_not_raise(tmp_path):
 # --- setup screens ---
 
 def test_render_setup_returns_image(tmp_path):
-    img = render_setup("svc@project.iam.gserviceaccount.com", output_path=str(tmp_path / "s.png"))
+    img = render_setup("http://192.168.0.5:8080", pin="123456",
+                       output_path=str(tmp_path / "s.png"))
     assert img.size == (WIDTH, HEIGHT)
 
 
@@ -161,15 +162,21 @@ def test_render_setup_qr_sits_on_white_panel(tmp_path):
     from gcal_epd.render.draw import _QR_QUIET
     from gcal_epd.render.layout import PADDING
 
-    img = render_setup("svc@project.iam.gserviceaccount.com", output_path=str(tmp_path / "s.png"))
-    # A pixel inside the quiet-zone margin, just outside the QR bitmap itself.
-    probe = img.getpixel((PADDING + _QR_QUIET // 2, PADDING + 56 + 20 + _QR_QUIET // 2))
+    img = render_setup("http://192.168.0.5:8080", pin="123456",
+                       output_path=str(tmp_path / "s.png"))
+    probe = img.getpixel((PADDING + _QR_QUIET // 2, PADDING + 56 + 22 + _QR_QUIET // 2))
     assert probe == PALETTE["white"]
 
 
-def test_render_setup_long_email_wraps(tmp_path):
-    long_email = "a" * 60 + "@project.iam.gserviceaccount.com"
-    render_setup(long_email, output_path=str(tmp_path / "s.png"))
+def test_render_setup_without_pin_does_not_raise(tmp_path):
+    render_setup("http://192.168.0.5:8080", output_path=str(tmp_path / "s.png"))
+
+
+def test_render_setup_long_url_is_truncated(tmp_path):
+    """A long address must not run off the panel."""
+    long_url = "http://192.168.0.5:8080/" + "x" * 200
+    img = render_setup(long_url, pin="123456", output_path=str(tmp_path / "s.png"))
+    assert img.size == (WIDTH, HEIGHT)
 
 
 def test_render_setup_success_returns_image(tmp_path):
