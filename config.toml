@@ -1,12 +1,15 @@
-[auth]
+[[sources]]
+type = "google_calendar"
+calendar_ids = ["bboykai0504@gmail.com"]
 service_account_file = "service_account.json"
-
-[calendar]
 days_ahead = 14
 max_results_per_calendar = 100
-calendar_ids = [
-    "bboykai0504@gmail.com",
-]
+
+[[sources]]
+type = "open_meteo"
+latitude = 25.0330
+longitude = 121.5654
+location = "Taipei"
 
 [display]
 output_path = "preview.png"
