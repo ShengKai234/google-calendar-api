@@ -3,17 +3,15 @@ import logging
 import tomllib
 from pathlib import Path
 
-from googleapiclient.errors import HttpError
-
-from gcal_epd.infrastructure.google_calendar.auth import get_credentials
-from gcal_epd.infrastructure.google_calendar.repository import GoogleCalendarRepository
-from gcal_epd.infrastructure.open_meteo.repository import OpenMeteoRepository
 from gcal_epd.application.display_service import run as run_display
+from gcal_epd.infrastructure.ics.repository import ICSRepository
+from gcal_epd.infrastructure.open_meteo.repository import OpenMeteoRepository
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).parent.parent.parent
+_EXAMPLE_FEEDS = "ics_feeds.example.toml"
 
 
 def load_config(path: str = "config.toml") -> dict:
@@ -21,19 +19,45 @@ def load_config(path: str = "config.toml") -> dict:
         return tomllib.load(f)
 
 
-def _build_event_repos(config: dict) -> list[GoogleCalendarRepository]:
-    repos = []
+def load_feeds(feeds_path: Path) -> list[dict]:
+    """Read feed definitions from the gitignored feeds file.
+
+    Feed URLs are bearer tokens, so they live outside the tracked config
+    rather than in config.toml.
+    """
+    try:
+        with open(feeds_path, "rb") as f:
+            return tomllib.load(f).get("feed", [])
+    except FileNotFoundError:
+        log.error(
+            "Calendar feed file not found: %s\n"
+            "Copy %s to %s and fill in your feed URLs.",
+            feeds_path.name, _EXAMPLE_FEEDS, feeds_path.name,
+        )
+        return []
+    except tomllib.TOMLDecodeError as e:
+        log.error("Could not parse %s: %s", feeds_path.name, e)
+        return []
+
+
+def _build_event_repos(config: dict) -> list[ICSRepository]:
+    repos: list[ICSRepository] = []
     for source in config.get("sources", []):
-        if source["type"] == "google_calendar":
-            sa_file = str(_PROJECT_ROOT / source["service_account_file"])
-            creds = get_credentials(sa_file)
-            repos.append(GoogleCalendarRepository(creds, source.get("calendar_ids", [])))
+        if source.get("type") != "ics":
+            continue
+        feeds_path = _PROJECT_ROOT / source.get("feeds_file", "ics_feeds.toml")
+        for feed in load_feeds(feeds_path):
+            url = feed.get("url", "")
+            if not url:
+                log.warning("Skipping feed with no url: %s", feed.get("name", "(unnamed)"))
+                continue
+            repos.append(ICSRepository(url=url, name=feed.get("name", "")))
     return repos
 
 
 def _build_weather_repo(config: dict) -> OpenMeteoRepository | None:
     for source in config.get("sources", []):
-        if source["type"] == "open_meteo":
+        if source.get("type") == "open_meteo":
             return OpenMeteoRepository(
                 latitude=source["latitude"],
                 longitude=source["longitude"],
@@ -43,35 +67,28 @@ def _build_weather_repo(config: dict) -> OpenMeteoRepository | None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Fetch Google Calendar and render to e-ink display")
-    parser.add_argument("--display", action="store_true", help="Push rendered image to e-ink display (Raspberry Pi only)")
-    parser.add_argument("--setup", action="store_true", help="Run one-time calendar sharing setup")
-    parser.add_argument("--email", help="Google Calendar email to use during setup (skips interactive prompt)")
+    parser = argparse.ArgumentParser(
+        description="Fetch calendar feeds and render to e-ink display"
+    )
+    parser.add_argument(
+        "--display",
+        action="store_true",
+        help="Push rendered image to e-ink display (Raspberry Pi only)",
+    )
     args = parser.parse_args()
 
     config = load_config()
-    config_path = _PROJECT_ROOT / "config.toml"
+    event_repos = _build_event_repos(config)
+    if not event_repos:
+        log.warning("No calendar feeds configured — rendering an empty calendar.")
 
-    gcal_sources = [s for s in config.get("sources", []) if s["type"] == "google_calendar"]
-    calendar_ids = [cid for s in gcal_sources for cid in s.get("calendar_ids", [])]
-
-    if args.setup or not calendar_ids:
-        from gcal_epd.infrastructure.google_calendar.setup import run_setup
-        run_setup(config, config_path, display=args.display, email=args.email)
-        config = load_config()
-
-    try:
-        event_repos = _build_event_repos(config)
-        weather_repo = _build_weather_repo(config)
-        run_display(
-            event_repos=event_repos,
-            weather_repo=weather_repo,
-            config=config,
-            project_root=_PROJECT_ROOT,
-            push_display=args.display,
-        )
-    except HttpError as error:
-        log.error("API error: %s", error)
+    run_display(
+        event_repos=event_repos,
+        weather_repo=_build_weather_repo(config),
+        config=config,
+        project_root=_PROJECT_ROOT,
+        push_display=args.display,
+    )
 
 
 if __name__ == "__main__":

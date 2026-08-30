@@ -170,3 +170,6 @@ client_secret_*
 token.json
 credentials.json
 service_account.json
+
+# Calendar feed URLs (contain private tokens)
+ics_feeds.toml
