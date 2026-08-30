@@ -1,7 +1,8 @@
+# Calendar feeds are defined in ics_feeds.toml, which is gitignored:
+# each feed URL is a bearer token. See ics_feeds.example.toml.
 [[sources]]
-type = "google_calendar"
-calendar_ids = ["bboykai0504@gmail.com"]
-service_account_file = "service_account.json"
+type = "ics"
+feeds_file = "ics_feeds.toml"
 days_ahead = 14
 max_results_per_calendar = 100
 
