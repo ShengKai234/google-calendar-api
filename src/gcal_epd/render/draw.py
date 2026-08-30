@@ -6,7 +6,8 @@ import datetime
 
 from PIL import Image, ImageDraw, ImageFont
 
-from gcal_epd.calendar_client import CalendarEvent
+from gcal_epd.domain.event import CalendarEvent
+from gcal_epd.domain.weather import WeatherInfo
 from gcal_epd.render.layout import (
     HEADER_H,
     PADDING,
@@ -45,7 +46,7 @@ def _truncate(draw: ImageDraw.ImageDraw, text: str, font, max_width: int) -> str
     return text + "…"
 
 
-def _draw_header(draw: ImageDraw.ImageDraw, fonts: dict) -> None:
+def _draw_header(draw: ImageDraw.ImageDraw, fonts: dict, weather: WeatherInfo | None = None) -> None:
     now_tw = datetime.datetime.now(TW_TZ)
     draw.rectangle([(0, 0), (WIDTH, HEADER_H)], fill=PALETTE["black"])
     draw.text(
@@ -54,16 +55,32 @@ def _draw_header(draw: ImageDraw.ImageDraw, fonts: dict) -> None:
         font=fonts["xl"],
         fill=PALETTE["white"],
     )
-    draw.text(
-        (WIDTH - 140, HEADER_H - 22),
-        f"Updated {now_tw.strftime('%H:%M')}",
-        font=fonts["sm"],
-        fill=PALETTE["white"],
-    )
+    if weather:
+        weather_str = f"{weather.temperature:.0f}°C  {weather.condition}"
+        draw.text(
+            (WIDTH - 200, 14),
+            weather_str,
+            font=fonts["md"],
+            fill=PALETTE["white"],
+        )
+        draw.text(
+            (WIDTH - 200, 36),
+            f"{weather.humidity}% humidity · {now_tw.strftime('%H:%M')}",
+            font=fonts["sm"],
+            fill=PALETTE["white"],
+        )
+    else:
+        draw.text(
+            (WIDTH - 140, HEADER_H - 22),
+            f"Updated {now_tw.strftime('%H:%M')}",
+            font=fonts["sm"],
+            fill=PALETTE["white"],
+        )
 
 
 def render(
     events: list[CalendarEvent],
+    weather: WeatherInfo | None = None,
     output_path: str = "preview.png",
     font_path: str = "",
 ) -> Image.Image:
@@ -77,7 +94,7 @@ def render(
         "sm": _load_font(font_path, 12),
     }
 
-    _draw_header(draw, fonts)
+    _draw_header(draw, fonts, weather=weather)
 
     title_x = PADDING + 78
     title_max_w = WIDTH - title_x - PADDING
