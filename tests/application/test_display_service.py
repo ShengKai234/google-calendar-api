@@ -11,9 +11,8 @@ from gcal_epd.domain.weather import WeatherInfo
 _CONFIG = {
     "sources": [
         {
-            "type": "google_calendar",
-            "calendar_ids": ["user@gmail.com"],
-            "service_account_file": "service_account.json",
+            "type": "ics",
+            "feeds_file": "ics_feeds.toml",
             "days_ahead": 7,
             "max_results_per_calendar": 50,
         },

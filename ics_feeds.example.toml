@@ -1,0 +1,16 @@
+# Copy to ics_feeds.toml and fill in your own feed URLs.
+# ics_feeds.toml is gitignored: each URL is a bearer token, so treat it
+# like a password and never commit it.
+#
+# Apple Calendar : Calendar app > right-click a calendar > Share Calendar >
+#                  Public Calendar > copy the webcal:// link
+# Google Calendar: Settings > [calendar] > Integrate calendar >
+#                  "Secret address in iCal format"
+
+[[feed]]
+# name is optional: omit it to use the calendar's own name.
+# name = "Apple"
+url = "webcal://p1-caldav.icloud.com/published/2/REPLACE_ME"
+
+[[feed]]
+url = "https://calendar.google.com/calendar/ical/you%40example.com/private-REPLACE_ME/basic.ics"

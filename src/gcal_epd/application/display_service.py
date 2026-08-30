@@ -19,14 +19,15 @@ def run(
     raw_font = display_cfg.get("font_path", "")
     font_path = str(project_root / raw_font) if raw_font and not raw_font.startswith("/") else raw_font
 
+    source_cfg = next(
+        (s for s in config.get("sources", []) if s.get("type") == "ics"),
+        {},
+    )
+    days_ahead = source_cfg.get("days_ahead", 14)
+    max_results = source_cfg.get("max_results_per_calendar", 100)
+
     all_events = []
     for repo in event_repos:
-        source_cfg = next(
-            (s for s in config.get("sources", []) if s["type"] == "google_calendar"),
-            {},
-        )
-        days_ahead = source_cfg.get("days_ahead", 14)
-        max_results = source_cfg.get("max_results_per_calendar", 100)
         all_events.extend(repo.fetch_events(days_ahead=days_ahead, max_results=max_results))
 
     all_events.sort(key=lambda e: e.start)

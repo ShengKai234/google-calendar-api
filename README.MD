@@ -20,17 +20,22 @@ Fetches Google Calendar events and renders them on a Waveshare 7.3" 7-color e-Pa
 ```
 google-calendar-api/
 ├── src/gcal_epd/
+│   ├── domain/              # CalendarEvent / WeatherInfo + repository Protocols
+│   ├── infrastructure/
+│   │   ├── ics/             # iCalendar feed repository
+│   │   └── open_meteo/      # Weather repository
+│   ├── application/         # Orchestrates fetch -> render -> display
 │   ├── render/
 │   │   ├── layout.py        # Layout calculation (geometry, grouping)
 │   │   └── draw.py          # Pillow drawing logic
-│   ├── auth.py              # Google OAuth token management
-│   ├── calendar_client.py   # Google Calendar API
 │   ├── epd.py               # e-Paper display push
 │   └── main.py              # Entry point
 ├── vendor/waveshare_epd/    # Waveshare driver (epd7in3f + epdconfig)
 ├── assets/fonts/            # NotoSansCJKtc-Regular.otf
 ├── deploy/                  # systemd service / timer / install script
-├── config.toml              # Runtime configuration
+├── config.toml              # Runtime configuration (tracked)
+├── ics_feeds.toml           # Your feed URLs (gitignored — secret!)
+├── ics_feeds.example.toml   # Template for the above
 ├── pyproject.toml           # Package definition
 └── test_display.py          # Standalone display hardware test
 ```
@@ -40,8 +45,10 @@ google-calendar-api/
 ## Prerequisites
 
 - Python 3.11+
-- Google Cloud project with Calendar API enabled
-- `credentials.json` from Google Cloud Console (OAuth 2.0 Desktop app)
+- One or more calendar feed URLs in iCalendar (`.ics`) format
+
+No Google Cloud project, API key or OAuth consent screen is required — the
+app reads published `.ics` feeds over plain HTTPS.
 
 ---
 
@@ -64,35 +71,49 @@ This script will:
 - Install system dependencies (`python3-venv`, `python3-dev`)
 - Enable SPI automatically
 - Create `.venv` and install all Python packages
-- Check for `credentials.json` and `token.json` and guide you if missing
+- Check for `ics_feeds.toml` and guide you if missing
 
-### 3. Place credentials
-
-Copy `credentials.json` (from Google Cloud Console) to the project root:
-
-```
-google-calendar-api/
-└── credentials.json   ← here
-```
-
-### 4. Google Calendar authentication
-
-Raspberry Pi OS Lite is headless (no browser). Generate `token.json` on any machine that has a browser:
+### 3. Add your calendar feeds
 
 ```bash
-# On a machine with a browser (Mac / PC)
-source .venv/bin/activate
+cp ics_feeds.example.toml ics_feeds.toml
+```
+
+Edit `ics_feeds.toml` and paste in your feed URLs:
+
+```toml
+[[feed]]
+name = "Apple"                       # optional; defaults to the feed's own name
+url  = "webcal://p1-caldav.icloud.com/published/2/..."
+
+[[feed]]
+name = "Google"
+url  = "https://calendar.google.com/calendar/ical/.../basic.ics"
+```
+
+> **Treat these URLs like passwords.** Anyone who has one can read that
+> calendar. `ics_feeds.toml` is gitignored for exactly this reason — never
+> commit it. To revoke a leaked URL, re-publish (Apple) or reset the private
+> address (Google); the old link stops working.
+
+**Where to find the URL**
+
+| Source | Path |
+|--------|------|
+| Apple Calendar | Calendar app → right-click calendar → Share Calendar → tick **Public Calendar** → Copy Link (`webcal://…`) |
+| Google Calendar | Settings → pick a calendar → Integrate calendar → **Secret address in iCal format** |
+
+Any other CalDAV/iCalendar publisher works too — Outlook, Fastmail, a
+university timetable — as long as it serves an `.ics` URL.
+
+### 4. Render a preview
+
+```bash
+. .venv/bin/activate
 python -m gcal_epd.main
-# → browser opens → sign in → token.json is created
 ```
 
-Then copy `token.json` to the Pi:
-
-```bash
-scp token.json admin@<pi-ip>:~/google-calendar-api/
-```
-
-Subsequent runs on the Pi will refresh the token automatically without a browser.
+Writes `preview.png`. No hardware needed.
 
 ### 5. Test the display
 
@@ -110,22 +131,29 @@ python -m gcal_epd.main --display
 
 ## Configuration
 
-Edit `config.toml` to adjust behavior:
+Runtime behaviour lives in `config.toml` (tracked). Secrets live in
+`ics_feeds.toml` (gitignored) — see step 3 above.
 
 ```toml
-[auth]
-credentials_file = "credentials.json"
-token_file = "token.json"
-
-[calendar]
-days_ahead = 7                        # How many days ahead to fetch
+[[sources]]
+type = "ics"
+feeds_file = "ics_feeds.toml"         # where your feed URLs live
+days_ahead = 14                       # how far ahead to look
 max_results_per_calendar = 100
-include_access_roles = ["owner"]      # "owner" | "writer" | "reader"
+
+[[sources]]
+type = "open_meteo"                   # weather widget; no API key needed
+latitude = 25.0330
+longitude = 121.5654
+location = "Taipei"
 
 [display]
-output_path = "preview.png"           # Rendered image output path
+output_path = "preview.png"           # rendered image output path
 font_path = "assets/fonts/NotoSansCJKtc-Regular.otf"
 ```
+
+Add as many `[[feed]]` blocks to `ics_feeds.toml` as you like — they are
+merged into one chronological list.
 
 ---
 
@@ -229,11 +257,13 @@ pip install -r requirements-to-freeze.txt --upgrade
 pip freeze > requirements.txt
 ```
 
-### Re-authenticate Google Calendar
+### Rotate a calendar feed URL
 
-Delete `token.json` and run again — a browser window will open:
+If a feed URL leaks, revoke it at the source — the old link stops working
+immediately:
 
-```bash
-rm token.json
-python -m gcal_epd.main
-```
+- **Apple**: Calendar → right-click calendar → Share Calendar → untick and
+  re-tick **Public Calendar** to mint a new link.
+- **Google**: Settings → calendar → Integrate calendar → **Reset private URLs**.
+
+Then paste the new URL into `ics_feeds.toml`.
