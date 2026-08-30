@@ -32,3 +32,20 @@ def test_weather_info_humidity_bounds():
     """Humidity should be representable as 0-100 percent."""
     w = WeatherInfo(temperature=15.0, condition="Foggy", humidity=100, location="Keelung")
     assert 0 <= w.humidity <= 100
+
+
+def test_precipitation_probability_defaults_to_zero():
+    """Sources without a rain forecast must still construct."""
+    w = WeatherInfo(temperature=22.5, condition="Clear", humidity=60, location="Taipei")
+    assert w.precipitation_probability == 0
+
+
+def test_precipitation_probability_is_stored():
+    w = WeatherInfo(
+        temperature=22.5,
+        condition="Rain",
+        humidity=90,
+        location="Taipei",
+        precipitation_probability=80,
+    )
+    assert w.precipitation_probability == 80
