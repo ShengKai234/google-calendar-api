@@ -176,3 +176,50 @@ flow. They were deliberately left in place so this branch does not touch
 (and the `qrcode` dependency) once both branches are merged.
 
 Branch: `refactor/ical-ics-source`. Tests 68 -> 94.
+
+### 2026-08-30 — Onboarding server for feed URLs
+
+**Discussion:**
+The ICS switch inverted the direction of the secret. Under the API the
+*device* held it (a service-account email) and a QR on the panel was a
+perfect fit: display out, phone in. With feeds the *user* holds a 100+
+character URL that must get *into* a box with no keyboard, camera or
+touchscreen — and a display cannot accept input. SSH was the only path.
+
+**Decisions:**
+- On `--setup`, or whenever no feeds are configured, the Pi serves a form
+  on the LAN and draws its own address, a QR of that address, and a
+  6-digit PIN on the panel. The address is not a secret; the PIN is what
+  stops another device on the same network writing feeds during the
+  window (10 min default, closes on first success).
+- `render_setup` / `render_setup_success` were repurposed rather than
+  deleted — the QR-on-white-panel handling and dark layout carried over
+  unchanged. This supersedes the earlier note to remove them.
+- Submitted URLs are probed before saving, so a typo fails at the form
+  instead of surfacing as a mysteriously empty calendar hours later.
+- `--reset` deletes the saved feeds and reopens setup. It confirms first,
+  and refuses outright when stdin is not a TTY unless `--yes` is given.
+- The feeds file is written mode 600; it holds live credentials.
+
+**Two bugs found while testing, both real:**
+- `probe_feed` originally called `ICSRepository.fetch_events`, which
+  swallows errors by design so one dead feed cannot take down a render.
+  An unreachable URL therefore returned 0 events and *saved* — exactly
+  the silent-empty-calendar failure the probe exists to prevent. A count
+  of 0 cannot stand in for failure either, since a reachable calendar may
+  legitimately have no upcoming events (the Apple one does). Split
+  `fetch_raw()` out as the raising path and pointed the probe at it.
+- `urllib3` logs the full request line at DEBUG, so a feed token reached
+  the journal whenever debug logging was on. Our own logging was clean;
+  the library was not. That logger is now held above DEBUG in
+  `ics/repository.py`, with a test pinning it.
+
+**Also fixed:** `deploy/setup.sh` never installed `spidev`/`gpiozero`,
+which `vendor/waveshare_epd/epdconfig.py` imports — the venv is built
+without `--system-site-packages`, so Pi OS's copies were invisible and
+the first `--display` run failed with ImportError. `deploy/install.sh`
+advertised `systemctl start` as the "manual run", but that unit ends in
+`shutdown -h now` and powers the Pi off; corrected.
+
+Branch: `feat/onboarding-server`, stacked on `refactor/ical-ics-source`.
+Tests 94 -> 160.

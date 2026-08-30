@@ -45,6 +45,13 @@ echo "[4/5] Installing Python packages..."
 . "$PROJECT_DIR/.venv/bin/activate"
 pip install --quiet -e .
 pip install --quiet -r "$PROJECT_DIR/requirements.txt"
+# The Waveshare driver imports these; they are not in requirements.txt
+# because they only exist on the Pi. The venv is built without
+# --system-site-packages, so Pi OS's copies are not visible to it.
+if grep -q "Raspberry Pi" /proc/cpuinfo 2>/dev/null; then
+    pip install --quiet spidev gpiozero
+    echo "      Installed spidev + gpiozero (e-Paper driver)."
+fi
 echo "      Done."
 
 # --- Check calendar feeds ---
@@ -64,9 +71,11 @@ echo ""
 echo "=== Setup complete ==="
 echo ""
 echo "Next steps:"
-echo "  1. Add your calendar feed URLs (if not done):"
+echo "  1. Add your calendar feeds — either scan the QR on the panel:"
+echo "       .venv/bin/python -m gcal_epd.main --setup --display"
+echo "     or edit the file directly:"
 echo "       cp ics_feeds.example.toml ics_feeds.toml && nano ics_feeds.toml"
 echo "  2. Render once to check it works:"
-echo "       python -m gcal_epd.main"
+echo "       .venv/bin/python -m gcal_epd.main"
 echo "  3. Install systemd timer for automatic refresh:"
 echo "       bash deploy/install.sh"

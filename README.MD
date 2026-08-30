@@ -75,11 +75,27 @@ This script will:
 
 ### 3. Add your calendar feeds
 
+**On the Pi, with the panel connected** — no SSH, no typing URLs:
+
 ```bash
-cp ics_feeds.example.toml ics_feeds.toml
+.venv/bin/python -m gcal_epd.main --setup --display
 ```
 
-Edit `ics_feeds.toml` and paste in your feed URLs:
+The panel shows a QR code, a web address and a 6-digit PIN. Scan the QR with
+your phone, paste your feed links into the form, enter the PIN, and the Pi
+saves them and renders your calendar. The address on screen is the Pi's own
+LAN address, not a secret; the PIN is what stops anyone else on the network
+writing feeds during the setup window (10 minutes by default).
+
+Without a panel, the same command prints the address and PIN to the terminal.
+
+**Or write the file by hand:**
+
+```bash
+cp ics_feeds.example.toml ics_feeds.toml
+nano ics_feeds.toml
+chmod 600 ics_feeds.toml
+```
 
 ```toml
 [[feed]]
@@ -87,7 +103,6 @@ name = "Apple"                       # optional; defaults to the feed's own name
 url  = "webcal://p1-caldav.icloud.com/published/2/..."
 
 [[feed]]
-name = "Google"
 url  = "https://calendar.google.com/calendar/ical/.../basic.ics"
 ```
 
@@ -106,14 +121,16 @@ url  = "https://calendar.google.com/calendar/ical/.../basic.ics"
 Any other CalDAV/iCalendar publisher works too — Outlook, Fastmail, a
 university timetable — as long as it serves an `.ics` URL.
 
-### 4. Render a preview
+### 4. Starting over
+
+To wipe the saved feeds and set up again:
 
 ```bash
-. .venv/bin/activate
-python -m gcal_epd.main
+.venv/bin/python -m gcal_epd.main --reset --display
 ```
 
-Writes `preview.png`. No hardware needed.
+This deletes `ics_feeds.toml` after confirming, then reopens the setup form.
+Add `--yes` to skip the prompt (required when running non-interactively).
 
 ### 5. Test the display
 

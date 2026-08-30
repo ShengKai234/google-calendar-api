@@ -332,37 +332,45 @@ def render(
 
 
 def render_setup(
-    service_account_email: str,
+    setup_url: str,
+    pin: str = "",
     output_path: str = "",
     font_path: str = "",
 ) -> Image.Image:
-    """Render the one-time calendar sharing setup screen."""
+    """Render the one-time setup screen.
+
+    The QR carries this device's own LAN address, not a secret — it is only
+    a shortcut so the phone does not have to type an IP.
+    """
     img = Image.new("RGB", (WIDTH, HEIGHT), BG)
     draw = ImageDraw.Draw(img)
 
     fonts = {
         "xl": _load_font(font_path, 32),
         "lg": _load_font(font_path, 21),
+        "url": _load_font(font_path, 20),
+        "pin": _load_font(font_path, 40),
         "md": _load_font(font_path, 15),
-        "sm": _load_font(font_path, 12),
+        "sm": _load_font(font_path, 13),
     }
 
     draw.rounded_rectangle(
         [(PADDING, PADDING), (WIDTH - PADDING, PADDING + 56)],
         radius=14, outline=FG, width=2,
     )
-    _text(draw, (PADDING + 20, PADDING + 28), "Calendar Setup", fonts["xl"], FG, anchor="lm", bold=1)
+    _text(draw, (PADDING + 20, PADDING + 28), "Calendar Setup", fonts["xl"], FG,
+          anchor="lm", bold=1)
 
-    content_y = PADDING + 56 + 20
-    text_x = PADDING + _QR_SIZE + 2 * _QR_QUIET + 24
+    content_y = PADDING + 56 + 22
+    text_x = PADDING + _QR_SIZE + 2 * _QR_QUIET + 26
 
-    # QR code (encodes the service account email as plain text for easy copy).
-    # It sits on its own white panel — a QR inverted on black will not scan.
+    # QR of the setup URL, on its own white panel so it still scans.
     import qrcode
     qr = qrcode.QRCode(box_size=4, border=2)
-    qr.add_data(service_account_email)
+    qr.add_data(setup_url)
     qr.make(fit=True)
-    qr_img = qr.make_image(fill_color=PALETTE["black"], back_color=PALETTE["white"]).convert("RGB")
+    qr_img = qr.make_image(fill_color=PALETTE["black"],
+                           back_color=PALETTE["white"]).convert("RGB")
     qr_img = qr_img.resize((_QR_SIZE, _QR_SIZE), Image.NEAREST)
     draw.rectangle(
         [
@@ -374,33 +382,28 @@ def render_setup(
     img.paste(qr_img, (PADDING + _QR_QUIET, content_y + _QR_QUIET))
 
     y = content_y
-    _text(draw, (text_x, y), "Share your Google Calendar", fonts["lg"], FG)
-    y += 30
-    _text(draw, (text_x, y), "with this service account:", fonts["md"], FG)
+    _text(draw, (text_x, y), "Scan with your phone,", fonts["lg"], FG)
+    y += 28
+    _text(draw, (text_x, y), "or open this address:", fonts["md"], FG)
     y += 26
+    _text(draw, (text_x, y), _truncate(draw, setup_url, fonts["url"],
+                                       WIDTH - text_x - PADDING),
+          fonts["url"], PALETTE["yellow"])
+    y += 34
 
-    # Email (may be long — split at the @ when it will not fit on one line)
-    email = service_account_email
-    mid = email.find("@")
-    if mid > 0 and draw.textlength(email, font=fonts["sm"]) > WIDTH - text_x - PADDING:
-        _text(draw, (text_x, y), email[:mid + 1], fonts["sm"], PALETTE["yellow"])
-        _text(draw, (text_x, y + 16), email[mid + 1:], fonts["sm"], PALETTE["yellow"])
-        y += 36
-    else:
-        _text(draw, (text_x, y), email, fonts["sm"], PALETTE["yellow"])
-        y += 20
+    if pin:
+        y += 6
+        _text(draw, (text_x, y), "PIN", fonts["md"], FG)
+        y += 22
+        _text(draw, (text_x, y), pin, fonts["pin"], PALETTE["green"], bold=1)
+        y += 62
 
-    y += 12
-    steps = [
-        "1. Open Google Calendar on your phone",
-        "2. Settings > My Calendars > [Calendar name]",
-        "3. Share with specific people & groups",
-        "4. Add the email above",
-        "5. Permission: See all event details",
-        "6. Scan the QR code to copy the email",
-    ]
-    for step in steps:
-        _text(draw, (text_x, y), step, fonts["sm"], FG)
+    for line in (
+        "Paste your calendar feed links",
+        "into the form, then enter the PIN.",
+        "This screen closes once saved.",
+    ):
+        _text(draw, (text_x, y), line, fonts["sm"], FG)
         y += 19
 
     if output_path:
@@ -434,7 +437,7 @@ def render_setup_success(output_path: str = "", font_path: str = "") -> Image.Im
     _text(
         draw,
         (PADDING + 20, PADDING + HEADER_H + 44),
-        "Calendar access granted. Fetching events...",
+        "Calendar feeds saved. Fetching events...",
         fonts["lg"],
         FG,
     )
