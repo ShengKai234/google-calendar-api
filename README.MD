@@ -232,6 +232,36 @@ sudo systemctl start gcal-epd.service
 
 ---
 
+## Wi-Fi Setup (hotspot mode)
+
+`deploy/install.sh` also enables `epd-wifi-setup.service`. At every boot it
+gives NetworkManager 60 seconds to join a saved network; if none answers,
+the Pi becomes a hotspot and the panel shows two QR codes:
+
+1. **Join the hotspot** — `ePaper-Setup-XXXX`, with a fresh random password
+   printed beside it for phones that cannot scan a Wi-Fi QR.
+2. **Open the form** — `http://10.42.0.1`. Pick your network (2.4GHz only —
+   the Pi Zero W has no 5GHz radio), enter the password, Connect.
+
+The hotspot closes while the Pi tries the network. A wrong password brings
+the same hotspot back with an error on the panel; rejoin and reload the
+page. On success the calendar refresh starts straight away.
+
+While waiting, the Pi drops the hotspot every 5 minutes to retry saved
+networks — so a router that boots slower than the Pi does not strand the
+display in setup — but never within 2 minutes of someone using the form.
+
+Requires NetworkManager (Raspberry Pi OS Bookworm or later). To move the
+display to a different network, start setup by hand. Over SSH, run it
+detached — the SSH session drops along with the Wi-Fi:
+
+```bash
+sudo systemd-run --working-directory=$PWD \
+    $PWD/.venv/bin/python -m gcal_epd.wifi_setup --display --force
+```
+
+---
+
 ## Schedule
 
 Default: **07:00 and 19:00 (Taiwan time)**.  

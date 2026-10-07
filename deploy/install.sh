@@ -19,7 +19,8 @@ fi
 echo "[1/4] Installing systemd units..."
 sudo cp "$PROJECT_DIR/deploy/$SERVICE_NAME.service" /etc/systemd/system/
 sudo cp "$PROJECT_DIR/deploy/$SERVICE_NAME.timer"   /etc/systemd/system/
-echo "      Copied .service and .timer to /etc/systemd/system/"
+sudo cp "$PROJECT_DIR/deploy/epd-wifi-setup.service" /etc/systemd/system/
+echo "      Copied .service, .timer and epd-wifi-setup.service to /etc/systemd/system/"
 
 # --- Reload systemd ---
 echo "[2/4] Reloading systemd daemon..."
@@ -29,6 +30,8 @@ sudo systemctl daemon-reload
 echo "[3/4] Enabling and starting timer..."
 sudo systemctl enable "$SERVICE_NAME.timer"
 sudo systemctl start  "$SERVICE_NAME.timer"
+# Runs at the next boot: a hotspot for Wi-Fi setup if no network is joined.
+sudo systemctl enable epd-wifi-setup.service
 
 # --- Enable hardware watchdog ---
 echo "[4/4] Enabling hardware watchdog..."
@@ -61,6 +64,9 @@ echo "                (NOT 'systemctl start' — that unit powers the Pi off"
 echo "                 when it finishes, by design for the timer.)"
 echo "  View logs   : journalctl -u $SERVICE_NAME.service -n 50"
 echo "  Disable     : sudo systemctl disable $SERVICE_NAME.timer"
+echo "  Change Wi-Fi: sudo systemd-run --working-directory=$PROJECT_DIR \\"
+echo "                  $PROJECT_DIR/.venv/bin/python -m gcal_epd.wifi_setup --display --force"
+echo "                (systemd-run, so it survives the SSH session dropping with the Wi-Fi.)"
 echo ""
 echo "Note: Reboot required for watchdog to take effect."
 read -rp "Reboot now? [y/N] " reboot_now

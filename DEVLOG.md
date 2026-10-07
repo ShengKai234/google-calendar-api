@@ -223,3 +223,39 @@ advertised `systemctl start` as the "manual run", but that unit ends in
 
 Branch: `feat/onboarding-server`, stacked on `refactor/ical-ics-source`.
 Tests 94 -> 160.
+
+## 2026-10-07
+
+### 2026-10-07 — Wi-Fi setup over a hotspot
+
+Moving to a Pi Zero WH, which may be handed a network it has never seen.
+Instead of baking Wi-Fi into the SD image, the Pi now falls back to a
+hotspot with a setup form when no saved network joins within 60 s.
+
+- `infrastructure/wifi/nmcli.py` wraps NetworkManager. Commands are
+  argument lists, never a shell, so a hostile SSID is just a name. Errors
+  from calls carrying a password report nmcli's message, not the command.
+- The Zero W has one radio: hotspot *or* client, and no scanning while the
+  hotspot is up. The controller scans first, and rescans only during
+  retry windows when the hotspot is down anyway.
+- `wlan0` reports "connected" while serving the hotspot too, so
+  `is_connected()` also checks the active connection is not our own AP.
+- No PIN on this form, unlike the feed form: it is reachable only through
+  a hotspot whose password is on the panel, which is already the proof of
+  presence a PIN would provide.
+- Submitting answers the phone first, then switches the radio; a failed
+  join deletes the bad profile (otherwise retried every boot) and brings
+  back the *same* hotspot, so the phone rejoins on its own.
+- Every 5 min of form inactivity the hotspot drops to retry saved
+  networks, so a router slower to boot than the Pi cannot strand it.
+- `epd-wifi-setup.service` is a oneshot with `DefaultDependencies=no`: as
+  a normal oneshot wanted by multi-user.target, boot would never finish
+  while the hotspot waits. `Before=gcal-epd.service` keeps a timer-fired
+  refresh from drawing over the setup screen.
+- `--force` over SSH must be detached with `systemd-run`; the SSH session
+  dies with the Wi-Fi and SIGHUP would take a foreground run with it.
+
+Not verified on hardware yet: the nmcli calls are tested against a fake,
+and the QR codes were checked by eye, not decoded.
+
+Branch: `feat/wifi-ap-mode`. Tests 161 -> 216.
