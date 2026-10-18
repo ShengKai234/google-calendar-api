@@ -4,6 +4,7 @@ import subprocess
 import pytest
 
 from gcal_epd.infrastructure.wifi.nmcli import (
+    AP_ADDRESS,
     AP_CONNECTION,
     NetworkManager,
     NmcliError,
@@ -112,18 +113,47 @@ def test_saved_wifi_profiles_excludes_hotspot_and_other_types():
 
 # --- hotspot ---
 
-def test_start_hotspot_creates_profile_without_autoconnect():
+def test_start_hotspot_pins_address_and_disables_autoconnect():
     fake = FakeNmcli()
     _nm(fake).start_hotspot("ePaper-Setup-AB12", "abcdefgh23")
-    hotspot = fake.called("device", "wifi", "hotspot")[0]
-    assert hotspot[hotspot.index("ssid") + 1] == "ePaper-Setup-AB12"
-    assert hotspot[hotspot.index("con-name") + 1] == AP_CONNECTION
-    assert fake.called("connection", "modify", AP_CONNECTION,
-                       "connection.autoconnect", "no")
+    add = fake.called("connection", "add")[0]
+    assert add[add.index("ssid") + 1] == "ePaper-Setup-AB12"
+    assert add[add.index("con-name") + 1] == AP_CONNECTION
+    assert add[add.index("802-11-wireless.mode") + 1] == "ap"
+    assert add[add.index("ipv4.method") + 1] == "shared"
+    assert add[add.index("ipv4.addresses") + 1] == f"{AP_ADDRESS}/24"
+    assert add[add.index("connection.autoconnect") + 1] == "no"
+    assert fake.called("connection", "up", AP_CONNECTION)
+
+
+def test_start_hotspot_refuses_when_another_interface_has_the_subnet():
+    """NetworkManager would accept the clash and routing would break quietly."""
+    out = ("GENERAL.DEVICE:wlan0\nGENERAL.DEVICE:usb0\n"
+           "IP4.ADDRESS[1]:10.42.0.1/24\nGENERAL.DEVICE:lo\nIP4.ADDRESS[1]:127.0.0.1/8\n")
+    fake = FakeNmcli([(("-t", "-f", "GENERAL.DEVICE,IP4.ADDRESS"), 0, out, "")])
+    with pytest.raises(NmcliError, match="usb0 already uses 10.42.0.1/24"):
+        _nm(fake).start_hotspot("X", "abcdefgh23")
+    assert not fake.called("connection", "add")
+
+
+def test_start_hotspot_ignores_its_own_interface_and_other_subnets():
+    out = ("GENERAL.DEVICE:wlan0\nIP4.ADDRESS[1]:10.42.0.1/24\n"
+           "GENERAL.DEVICE:eth0\nIP4.ADDRESS[1]:192.168.1.20/24\n")
+    fake = FakeNmcli([(("-t", "-f", "GENERAL.DEVICE,IP4.ADDRESS"), 0, out, "")])
+    _nm(fake).start_hotspot("X", "abcdefgh23")
+    assert fake.called("connection", "up", AP_CONNECTION)
+
+
+def test_start_hotspot_removes_profile_when_it_will_not_come_up():
+    fake = FakeNmcli([(("connection", "up"), 4, "", "Error: activation failed")])
+    with pytest.raises(NmcliError):
+        _nm(fake).start_hotspot("X", "abcdefgh23")
+    deletes = fake.called("connection", "delete", AP_CONNECTION)
+    assert len(deletes) == 2  # stale profile before, failed profile after
 
 
 def test_hotspot_error_does_not_leak_password():
-    fake = FakeNmcli([(("device", "wifi", "hotspot"), 4, "", "Error: radio blocked")])
+    fake = FakeNmcli([(("connection", "add"), 4, "", "Error: radio blocked")])
     with pytest.raises(NmcliError) as e:
         _nm(fake).start_hotspot("X", PASSWORD)
     assert PASSWORD not in str(e.value)

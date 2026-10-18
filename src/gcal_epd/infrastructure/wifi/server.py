@@ -18,11 +18,10 @@ from html import escape
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
 
-from gcal_epd.infrastructure.wifi.nmcli import Network, is_valid_psk
+from gcal_epd.infrastructure.wifi.nmcli import AP_ADDRESS, Network, is_valid_psk
 
 log = logging.getLogger(__name__)
 
-AP_ADDRESS = "10.42.0.1"  # NetworkManager's fixed address in shared mode
 DEFAULT_PORT = 80
 _MAX_BODY = 8 * 1024
 _MAX_SSID_BYTES = 32

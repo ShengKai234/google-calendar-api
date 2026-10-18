@@ -259,3 +259,13 @@ Not verified on hardware yet: the nmcli calls are tested against a fake,
 and the QR codes were checked by eye, not decoded.
 
 Branch: `feat/wifi-ap-mode`. Tests 161 -> 216.
+
+**2026-10-18 follow-up — pin the hotspot address.** `10.42.0.1` was an
+assumption: `nmcli device wifi hotspot` lets NetworkManager pick the first
+free `10.42.x.0/24`, so another shared connection (say a `usb0` gadget)
+would move the hotspot to `10.42.1.1` while the panel QR still said
+`10.42.0.1`. The hotspot is now built with `connection add` and
+`ipv4.addresses 10.42.0.1/24`. Pinning alone is not enough — NetworkManager
+accepts the same subnet on two interfaces and routing just breaks — so
+`start_hotspot` first checks no other device holds `10.42.0.x` and fails
+with a message naming it. Tests 216 -> 219.

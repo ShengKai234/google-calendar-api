@@ -20,6 +20,10 @@ log = logging.getLogger(__name__)
 
 DEFAULT_IFNAME = "wlan0"
 AP_CONNECTION = "epd-setup-ap"
+# Pinned rather than left to NetworkManager, which picks the first free
+# 10.42.x.0/24 — the panel's QR must name the address the hotspot really has.
+AP_ADDRESS = "10.42.0.1"
+AP_PREFIX = 24
 _CLIENT_PREFIX = "wifi-"
 _WIFI_TYPE = "802-11-wireless"
 
@@ -163,13 +167,53 @@ class NetworkManager:
 
     # --- hotspot ----------------------------------------------------
     def start_hotspot(self, ssid: str, password: str) -> None:
-        """Bring up a WPA2 hotspot; NetworkManager serves DHCP on 10.42.0.1/24."""
+        """Bring up a WPA2 hotspot on AP_ADDRESS, serving DHCP to phones.
+
+        Built with `connection add` instead of `device wifi hotspot` so the
+        address is fixed. NetworkManager would not refuse an address another
+        interface already uses — routing would just break quietly — so that
+        is checked first and fails here with a clear message.
+        """
+        self._check_ap_subnet_free()
         self.remove_hotspot()
-        self._nmcli("device", "wifi", "hotspot", "ifname", self.ifname,
-                    "con-name", AP_CONNECTION, "ssid", ssid, "password", password,
-                    secret=True)
-        # Never pick the hotspot on its own at boot over a real network.
-        self._nmcli("connection", "modify", AP_CONNECTION, "connection.autoconnect", "no")
+        self._nmcli(
+            "connection", "add", "type", "wifi", "ifname", self.ifname,
+            "con-name", AP_CONNECTION, "ssid", ssid,
+            # Never pick the hotspot on its own at boot over a real network.
+            "connection.autoconnect", "no",
+            "802-11-wireless.mode", "ap", "802-11-wireless.band", "bg",
+            # WPA2-AES only: the Zero W's brcmfmac AP fails on mixed WPA/TKIP.
+            "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.proto", "rsn",
+            "wifi-sec.pairwise", "ccmp", "wifi-sec.group", "ccmp",
+            "wifi-sec.psk", password,
+            "ipv4.method", "shared", "ipv4.addresses", f"{AP_ADDRESS}/{AP_PREFIX}",
+            "ipv6.method", "disabled",
+            secret=True,
+        )
+        try:
+            self._nmcli("connection", "up", AP_CONNECTION)
+        except NmcliError:
+            self.remove_hotspot()
+            raise
+
+    def _check_ap_subnet_free(self) -> None:
+        """Raise if another interface already sits on the hotspot's subnet."""
+        try:
+            out = self._nmcli("-t", "-f", "GENERAL.DEVICE,IP4.ADDRESS", "device", "show")
+        except NmcliError:
+            return  # cannot tell; let activation decide
+        subnet = AP_ADDRESS.rsplit(".", 1)[0] + "."
+        device = ""
+        for line in out.splitlines():
+            key, _, value = line.partition(":")
+            if key == "GENERAL.DEVICE":
+                device = value
+            elif key.startswith("IP4.ADDRESS") and value.startswith(subnet) \
+                    and device != self.ifname:
+                raise NmcliError(
+                    f"{device} already uses {value}, the hotspot's subnet. "
+                    f"Free {subnet}0/{AP_PREFIX} on {device} first."
+                )
 
     def resume_hotspot(self) -> None:
         """Bring the same hotspot back, so a phone that joined once rejoins."""
