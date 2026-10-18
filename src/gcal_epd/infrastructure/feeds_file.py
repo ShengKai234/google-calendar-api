@@ -1,0 +1,76 @@
+"""
+The feeds file: the gitignored TOML that holds the calendar feed URLs.
+
+Each URL is a bearer token — anyone holding one can read that calendar — so
+the URLs live here rather than in the tracked config.toml. Reading, writing
+and deleting the file all sit in this one module so its format has a single
+owner; the setup form writes it, the calendar refresh reads it.
+"""
+import logging
+import tomllib
+from pathlib import Path
+
+log = logging.getLogger(__name__)
+
+EXAMPLE_FILE = "ics_feeds.example.toml"
+
+
+def load_feeds(path: Path) -> list[dict]:
+    """The `[[feed]]` entries, or [] if the file is missing or unreadable."""
+    path = Path(path)
+    try:
+        with open(path, "rb") as f:
+            return tomllib.load(f).get("feed", [])
+    except FileNotFoundError:
+        log.error(
+            "Calendar feed file not found: %s\n"
+            "Copy %s to %s and fill in your feed URLs.",
+            path.name, EXAMPLE_FILE, path.name,
+        )
+        return []
+    except tomllib.TOMLDecodeError as e:
+        log.error("Could not parse %s: %s", path.name, e)
+        return []
+
+
+def _toml_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def render_feeds_toml(feeds: list[dict]) -> str:
+    lines = [
+        "# Written by the onboarding server. Each URL is a bearer token —",
+        "# anyone holding one can read that calendar. Never commit this file.",
+        "",
+    ]
+    for feed in feeds:
+        lines.append("[[feed]]")
+        name = feed.get("name", "").strip()
+        if name:
+            lines.append(f'name = "{_toml_escape(name)}"')
+        lines.append(f'url = "{_toml_escape(feed["url"])}"')
+        lines.append("")
+    return "\n".join(lines)
+
+
+def write_feeds_file(path: Path, feeds: list[dict]) -> None:
+    """Write the feeds file readable only by its owner."""
+    path = Path(path)
+    path.write_text(render_feeds_toml(feeds), encoding="utf-8")
+    path.chmod(0o600)  # holds live calendar credentials
+
+
+def reset_feeds(path: Path) -> bool:
+    """Delete the saved feed file, returning True if there was one.
+
+    This discards the stored feed URLs. They are recoverable only from
+    wherever the user originally copied them, so callers should confirm
+    before invoking this.
+    """
+    path = Path(path)
+    if not path.exists():
+        log.info("Nothing to reset — %s does not exist.", path.name)
+        return False
+    path.unlink()
+    log.info("Removed %s. Calendar feeds are no longer configured.", path.name)
+    return True

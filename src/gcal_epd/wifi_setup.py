@@ -33,7 +33,6 @@ from gcal_epd.infrastructure.wifi.server import (
     generate_ap_ssid,
 )
 
-logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)
 
 BOOT_WAIT = 60        # seconds to let NetworkManager join a saved network
@@ -156,6 +155,7 @@ def main() -> None:
     parser.add_argument("--start-unit", metavar="UNIT", action="append", default=[],
                         help="systemd unit to start once Wi-Fi is up (repeatable)")
     args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(message)s")  # not at import
 
     if not NetworkManager.available():
         log.error("nmcli not found — Wi-Fi setup needs NetworkManager "
