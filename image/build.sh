@@ -140,13 +140,16 @@ grep -q '^dtparam=spi=on' "$CONFIG" || echo "dtparam=spi=on" >> "$CONFIG"
 CMDLINE="$ROOT/boot/firmware/cmdline.txt"
 grep -q 'cfg80211.ieee80211_regdom=' "$CMDLINE" || \
     sed -i "1s/\$/ cfg80211.ieee80211_regdom=$WIFI_COUNTRY/" "$CMDLINE"
-# Pi OS keeps Wi-Fi soft-blocked until a country is set through its own
-# tools; the hotspot must come up on a card nobody has configured.
+# Until a Wi-Fi country is set through Pi OS's own tools, Wi-Fi is
+# rfkill-blocked and NetworkManager keeps its radio off (WirelessEnabled=false
+# in its state file); either one makes the hotspot fail with "No suitable
+# device found". The hotspot must come up on a card nobody has configured.
 mkdir -p "$ROOT/etc/systemd/system/epd-wifi-setup.service.d"
 cat > "$ROOT/etc/systemd/system/epd-wifi-setup.service.d/10-image.conf" <<'EOF'
-# Added by image/build.sh: the hotspot needs the radio unblocked.
+# Added by image/build.sh: the hotspot needs the radio on, at both levels.
 [Service]
 ExecStartPre=-/usr/sbin/rfkill unblock wifi
+ExecStartPre=-/usr/bin/nmcli radio wifi on
 EOF
 
 step "systemd units, timer, watchdog (deploy/install.sh)"

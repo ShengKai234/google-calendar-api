@@ -42,7 +42,7 @@ bash image/build-in-docker.sh
 | 程式 | 這個 commit 的程式，放在 `/opt/e-pages`，擁有者是系統帳號 `epd`（屬於 `spi`、`gpio` 群組） |
 | `.venv` | 在 ARMv6 的 chroot 裡建置（`QEMU_CPU=arm1176`），pip 才會選 Pi Zero 能跑的 wheel |
 | 服務 | 原封不動執行 `deploy/install.sh`，只是把 `sudo` 和 `systemctl start` 換成 chroot 用的替身 |
-| 開機 | `dtparam=spi=on`；在核心參數設定 Wi-Fi 國家；開熱點前先 `rfkill unblock wifi` |
+| 開機 | `dtparam=spi=on`；在核心參數設定 Wi-Fi 國家；開熱點前先執行 `rfkill unblock wifi` 和 `nmcli radio wifi on` |
 
 程式放在 `/opt/e-pages` 而不是家目錄，是因為映像檔裡還沒有使用者 —— 如果有要求，Imager 會在第一次開機時才建立。
 

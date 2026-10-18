@@ -52,7 +52,7 @@ SSH only if you want to log in for maintenance.
 | Program | The commit, in `/opt/e-pages`, owned by the system user `epd` (groups `spi`, `gpio`) |
 | `.venv` | Built in an ARMv6 chroot (`QEMU_CPU=arm1176`), so pip picks Pi Zero wheels |
 | Units | `deploy/install.sh`, unchanged, with `sudo` and `systemctl start` stubbed for the chroot |
-| Boot | `dtparam=spi=on`; Wi-Fi country on the kernel command line; `rfkill unblock wifi` before the hotspot |
+| Boot | `dtparam=spi=on`; Wi-Fi country on the kernel command line; `rfkill unblock wifi` and `nmcli radio wifi on` before the hotspot |
 
 The app runs from `/opt/e-pages` rather than a home directory because the
 image has no user yet — Imager creates one, if asked, at first boot.
