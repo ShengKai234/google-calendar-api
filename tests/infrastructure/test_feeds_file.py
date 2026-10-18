@@ -42,10 +42,12 @@ def test_load_reads_back_what_write_wrote(tmp_path):
     assert load_feeds(path) == feeds
 
 
-def test_load_missing_file_is_empty_and_logged(tmp_path, caplog):
-    with caplog.at_level(logging.ERROR):
+def test_load_missing_file_is_empty_and_not_an_error(tmp_path, caplog):
+    """A new display has no feeds file yet; that is the setup step, not a fault."""
+    with caplog.at_level(logging.INFO):
         assert load_feeds(tmp_path / "ics_feeds.toml") == []
-    assert "not found" in caplog.text
+    assert "No calendar feeds yet" in caplog.text
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
 
 def test_load_unparsable_file_is_empty(tmp_path):

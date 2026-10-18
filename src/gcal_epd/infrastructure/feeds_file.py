@@ -23,9 +23,10 @@ def load_feeds(path: Path) -> list[dict]:
         with open(path, "rb") as f:
             return tomllib.load(f).get("feed", [])
     except FileNotFoundError:
-        log.error(
-            "Calendar feed file not found: %s\n"
-            "Copy %s to %s and fill in your feed URLs.",
+        # Normal on a new display: setup has simply not run yet.
+        log.info(
+            "No calendar feeds yet (%s does not exist). Add them with "
+            "--setup, or copy %s to %s.",
             path.name, EXAMPLE_FILE, path.name,
         )
         return []
