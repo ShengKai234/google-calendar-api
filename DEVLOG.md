@@ -404,3 +404,12 @@ LAN address is not known in advance — so the links are collected up front.
 Written before #13/#14 and rebuilt on top of them: the pending helpers sit
 in `feeds_file.py` (format owner) and the check-and-apply step in
 `setup_service.py` (setup flow); nothing imports `main`.
+
+Follow-ups found on hardware, each its own commit on this branch: the
+first-run "feed file not found" is logged at INFO, not ERROR; the refresh
+log states the measured 15–30 s instead of ~36 s; calendar setup no longer
+draws "Connected!" right before the calendar (one refresh fewer);
+`epd-feed-setup` is `Before=gcal-epd.service`, so a timer run waits for
+setup instead of racing it for the panel; and `install.sh` no longer warns
+that `systemctl start` powers the Pi off. README and architecture, in both
+languages, describe the one-step flow. Tests 261 -> 283.
