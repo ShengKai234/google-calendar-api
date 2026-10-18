@@ -1,9 +1,10 @@
 """
 Calendar setup: the one-time flow that gets feed URLs onto the device.
 
-Serves the setup form, shows its address and PIN on the panel, waits for the
-phone, then confirms on the panel. The setup counterpart of display_service,
-which does the routine refresh.
+Serves the setup form, shows its address and PIN on the panel, and waits for
+the phone. There is no "saved" screen: the calendar the caller draws next is
+the confirmation, and one refresh fewer (each takes 15–30 s on the Pi).
+The setup counterpart of display_service, which does the routine refresh.
 """
 import logging
 from pathlib import Path
@@ -29,26 +30,19 @@ def run_onboarding(config: dict, push_display: bool, error: str = "") -> bool:
     log.info("")
 
     if push_display:
-        push_setup_screen(config, "setup", url=server.url, pin=server.pin, error=error)
+        push_setup_screen(config, server.url, server.pin, error)
 
-    saved = server.serve_until_configured()
-    if saved and push_display:
-        push_setup_screen(config, "success")
-    return saved
+    return server.serve_until_configured()
 
 
-def push_setup_screen(config: dict, kind: str, **kwargs) -> None:
-    """Draw a setup screen to the panel; never fatal if the panel is absent."""
-    font = font_path(config)
+def push_setup_screen(config: dict, url: str, pin: str, error: str = "") -> None:
+    """Draw the setup screen to the panel; never fatal if the panel is absent."""
     try:
         from gcal_epd.epd import push_to_display
-        from gcal_epd.render.draw import render_setup, render_setup_success
-        img = (render_setup(kwargs["url"], pin=kwargs.get("pin", ""), font_path=font,
-                            error=kwargs.get("error", ""))
-               if kind == "setup" else render_setup_success(font_path=font))
-        push_to_display(img)
+        from gcal_epd.render.draw import render_setup
+        push_to_display(render_setup(url, pin=pin, font_path=font_path(config), error=error))
     except Exception as e:
-        log.warning("Could not draw the %s screen: %s", kind, e)
+        log.warning("Could not draw the setup screen: %s", e)
 
 
 def apply_pending_feeds(pending_path: Path, feeds_path: Path, check=check_feed) -> str:

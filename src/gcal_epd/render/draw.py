@@ -416,39 +416,3 @@ def render_setup(
     if output_path:
         img.save(output_path)
     return img
-
-
-def render_setup_success(output_path: str = "", font_path: str = "") -> Image.Image:
-    """Brief success screen shown after calendar access is confirmed."""
-    img = Image.new("RGB", (WIDTH, HEIGHT), BG)
-    draw = ImageDraw.Draw(img)
-
-    fonts = {
-        "xl": _load_font(font_path, 44),
-        "lg": _load_font(font_path, 22),
-    }
-
-    draw.rounded_rectangle(
-        [(PADDING, PADDING), (WIDTH - PADDING, PADDING + HEADER_H)],
-        radius=14, outline=PALETTE["green"], width=3,
-    )
-    _text(
-        draw,
-        (PADDING + 20, PADDING + HEADER_H / 2),
-        "Connected!",
-        fonts["xl"],
-        PALETTE["green"],
-        anchor="lm",
-        bold=1,
-    )
-    _text(
-        draw,
-        (PADDING + 20, PADDING + HEADER_H + 44),
-        "Calendar feeds saved. Fetching events...",
-        fonts["lg"],
-        FG,
-    )
-
-    if output_path:
-        img.save(output_path)
-    return img

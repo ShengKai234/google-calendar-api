@@ -12,7 +12,6 @@ from gcal_epd.render.draw import (
     _CONDITION_ICON,
     render,
     render_setup,
-    render_setup_success,
 )
 from gcal_epd.render.layout import BG, HEIGHT, PALETTE, WIDTH, TW_TZ
 
@@ -176,11 +175,6 @@ def test_render_setup_long_url_is_truncated(tmp_path):
     """A long address must not run off the panel."""
     long_url = "http://192.168.0.5:8080/" + "x" * 200
     img = render_setup(long_url, pin="123456", output_path=str(tmp_path / "s.png"))
-    assert img.size == (WIDTH, HEIGHT)
-
-
-def test_render_setup_success_returns_image(tmp_path):
-    img = render_setup_success(output_path=str(tmp_path / "ok.png"))
     assert img.size == (WIDTH, HEIGHT)
 
 

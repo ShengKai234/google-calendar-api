@@ -29,30 +29,30 @@ def _run(monkeypatch, saves, push_display=True, error=""):
 
     monkeypatch.setattr(setup_service, "FeedSetupServer", make)
     monkeypatch.setattr(setup_service, "push_setup_screen",
-                        lambda config, kind, **kw: screens.append((kind, kw)))
+                        lambda config, url, pin, error="": screens.append((url, pin, error)))
     saved = setup_service.run_onboarding({}, push_display=push_display, error=error)
     _run.server = servers[0]
     return saved, screens
 
 
-def test_saved_shows_setup_then_success(monkeypatch):
+def test_saved_draws_only_the_setup_screen(monkeypatch):
+    """The calendar drawn next is the confirmation; no extra refresh."""
     saved, screens = _run(monkeypatch, saves=True)
     assert saved is True
-    assert screens[0] == ("setup", {"url": FakeServer.url, "pin": FakeServer.pin, "error": ""})
-    assert screens[1][0] == "success"
+    assert screens == [(FakeServer.url, FakeServer.pin, "")]
 
 
 def test_reopened_setup_shows_why_on_panel_and_form(monkeypatch):
     why = "The link at h.example is not a calendar (iCal) file."
     _, screens = _run(monkeypatch, saves=False, error=why)
-    assert screens[0][1]["error"] == why
+    assert screens[0][2] == why
     assert _run.server.notice == why
 
 
 def test_window_closed_leaves_setup_screen(monkeypatch):
     saved, screens = _run(monkeypatch, saves=False)
     assert saved is False
-    assert [k for k, _ in screens] == ["setup"]
+    assert len(screens) == 1
 
 
 def test_no_panel_no_screens(monkeypatch):
@@ -65,7 +65,7 @@ def test_push_setup_screen_never_raises(monkeypatch):
     import gcal_epd.epd as epd
     monkeypatch.setattr(epd, "push_to_display",
                         lambda img: (_ for _ in ()).throw(RuntimeError("no panel")))
-    setup_service.push_setup_screen({}, "setup", url="http://x", pin="1")
+    setup_service.push_setup_screen({}, "http://x", "1")
 
 
 # --- links parked by the Wi-Fi form ---
