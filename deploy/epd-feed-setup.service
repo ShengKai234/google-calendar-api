@@ -4,6 +4,9 @@
 Description=e-Paper calendar setup form (first run, no feeds yet)
 After=network-online.target
 Wants=network-online.target
+# One process on the panel at a time: a timer run that fires while setup is
+# open, or while it draws the calendar it just saved, waits for it to finish.
+Before=gcal-epd.service
 # Runs when calendars are not set up yet, OR when the Wi-Fi hotspot form
 # parked links to check ("|" makes these two conditions an OR).
 # gcal-epd.service has the opposite conditions, so exactly one runs.

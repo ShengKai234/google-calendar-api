@@ -32,3 +32,11 @@ def test_install_installs_every_unit():
     for unit in UNITS:
         stem = unit.name.replace("gcal-epd", "$SERVICE_NAME")
         assert unit.name in script or stem in script, unit.name
+
+
+def test_panel_units_are_ordered():
+    """Two processes driving the panel at once fail with 'GPIO busy'."""
+    wifi = (DEPLOY / "epd-wifi-setup.service").read_text()
+    feed = (DEPLOY / "epd-feed-setup.service").read_text()
+    assert re.search(r"^Before=.*gcal-epd\.service.*epd-feed-setup\.service", wifi, re.M)
+    assert re.search(r"^Before=gcal-epd\.service", feed, re.M)
