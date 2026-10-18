@@ -354,3 +354,25 @@ the interactive `--reset` prompt) and two did not.
 Left as is: `_build_event_repos` reads every ics source's `feeds_file`,
 while setup and reset use only the first. Harmless with the one source in
 `config.toml`. No behaviour change. Tests 246 -> 253.
+
+### 2026-10-18 — Docs rewritten, in English and Traditional Chinese
+
+The README had drifted far from the code: it still described Google Calendar
+on a 64-bit Pi 4, listed none of the Wi-Fi, onboarding, config or feeds-file
+modules, numbered deployment steps 1 then 5, said the timer ran hourly, and
+told readers to `cp` unit files that are now templates. It is rewritten
+around the actual first-boot flow (flash → `setup.sh` → `install.sh` →
+reboot, then the panel guides Wi-Fi and calendar setup).
+
+The architecture diagrams, checked line by line against the code earlier
+today, moved into `docs/ARCHITECTURE.md` and were updated for the shared
+`config.py`, `setup_service.py` and `feeds_file.py`. The personal boot
+timeline (LAN IP, hotspot name) stays out of the repo.
+
+Both files have a `.zh-TW.md` twin; English is the source. A test compares
+the skeleton of each pair — heading outline, tables, and every Mermaid
+diagram with its quoted text stripped — so a translated label passes but a
+section or an arrow added to one language only fails. Checked by mutation:
+an extra arrow and an extra heading in the Chinese file each fail it.
+`README.MD` was renamed `README.md` to pair with `README.zh-TW.md`.
+Tests 253 -> 261.
