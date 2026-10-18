@@ -310,3 +310,21 @@ take, and refuses to install a unit with a placeholder left unfilled.
 `%h` was no help: in a system unit it is root's home. A test pins that no
 unit names `/home/` and that every placeholder is one install.sh fills.
 Tests 228 -> 238.
+
+## 2026-10-18
+
+### 2026-10-18 — Shared config module
+
+Checking the architecture diagrams against the code turned up two smells.
+`wifi_setup` imported `main` — one entry point depending on another — only
+to call `load_config()` and read `_PROJECT_ROOT`; that also dragged the
+calendar, weather and onboarding modules (and `requests`, `icalendar`)
+into the root-run Wi-Fi setup. And "resolve `display.font_path` against the
+checkout" was written out three times: `main._push_screen`,
+`display_service.run` and `wifi_setup._make_push`.
+
+`gcal_epd/config.py` now owns `PROJECT_ROOT`, `load_config`, `resolve`,
+`font_path` and `feeds_file`. Both entry points, the application layer and
+`install.sh` read settings from it. A test runs the Wi-Fi panel path in a
+fresh interpreter and asserts `gcal_epd.main` was never imported; it fails
+against the old code. Behaviour is unchanged. Tests 238 -> 246.

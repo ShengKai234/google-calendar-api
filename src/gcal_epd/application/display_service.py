@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 
+from gcal_epd.config import font_path, resolve
 from gcal_epd.domain.repositories import EventRepository, WeatherRepository
 from gcal_epd.render.draw import render
 
@@ -15,9 +16,8 @@ def run(
     push_display: bool = False,
 ) -> None:
     display_cfg = config.get("display", {})
-    output_path = str(project_root / display_cfg.get("output_path", "preview.png"))
-    raw_font = display_cfg.get("font_path", "")
-    font_path = str(project_root / raw_font) if raw_font and not raw_font.startswith("/") else raw_font
+    output_path = resolve(display_cfg.get("output_path", "preview.png"), project_root)
+    font = font_path(config, project_root)
 
     source_cfg = next(
         (s for s in config.get("sources", []) if s.get("type") == "ics"),
@@ -34,7 +34,7 @@ def run(
 
     weather = weather_repo.fetch_weather() if weather_repo else None
 
-    img = render(all_events, weather=weather, output_path=output_path, font_path=font_path)
+    img = render(all_events, weather=weather, output_path=output_path, font_path=font)
     log.info("Preview saved to %s", output_path)
 
     if push_display:

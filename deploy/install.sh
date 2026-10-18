@@ -26,7 +26,7 @@ fi
 RUN_USER="$(stat -c %U "$PROJECT_DIR")"
 # Ask the app itself, so the units and config.toml's feeds_file never disagree.
 FEEDS_FILE="$(cd "$PROJECT_DIR" && "$PYTHON" -c \
-    'from gcal_epd.main import _feeds_path, load_config; print(_feeds_path(load_config()))')"
+    'from gcal_epd.config import feeds_file, load_config; print(feeds_file(load_config()))')"
 
 for value in "$PROJECT_DIR" "$FEEDS_FILE"; do
     case "$value" in

@@ -5,6 +5,13 @@ import tomllib
 from pathlib import Path
 
 from gcal_epd.application.display_service import run as run_display
+from gcal_epd.config import (
+    DEFAULT_FEEDS_FILE,
+    PROJECT_ROOT,
+    feeds_file,
+    font_path,
+    load_config,
+)
 from gcal_epd.infrastructure.ics.repository import ICSRepository
 from gcal_epd.infrastructure.onboarding.server import FeedSetupServer, reset_feeds
 from gcal_epd.infrastructure.open_meteo.repository import OpenMeteoRepository
@@ -12,13 +19,7 @@ from gcal_epd.infrastructure.open_meteo.repository import OpenMeteoRepository
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)
 
-_PROJECT_ROOT = Path(__file__).parent.parent.parent
 _EXAMPLE_FEEDS = "ics_feeds.example.toml"
-
-
-def load_config(path: str = "config.toml") -> dict:
-    with open(_PROJECT_ROOT / path, "rb") as f:
-        return tomllib.load(f)
 
 
 def load_feeds(feeds_path: Path) -> list[dict]:
@@ -47,7 +48,7 @@ def _build_event_repos(config: dict) -> list[ICSRepository]:
     for source in config.get("sources", []):
         if source.get("type") != "ics":
             continue
-        feeds_path = _PROJECT_ROOT / source.get("feeds_file", "ics_feeds.toml")
+        feeds_path = PROJECT_ROOT / source.get("feeds_file", DEFAULT_FEEDS_FILE)
         for feed in load_feeds(feeds_path):
             url = feed.get("url", "")
             if not url:
@@ -68,16 +69,9 @@ def _build_weather_repo(config: dict) -> OpenMeteoRepository | None:
     return None
 
 
-def _feeds_path(config: dict) -> Path:
-    for source in config.get("sources", []):
-        if source.get("type") == "ics":
-            return _PROJECT_ROOT / source.get("feeds_file", "ics_feeds.toml")
-    return _PROJECT_ROOT / "ics_feeds.toml"
-
-
 def run_onboarding(config: dict, push_display: bool) -> bool:
     """Serve the setup form, showing the address and PIN on the panel."""
-    feeds_path = _feeds_path(config)
+    feeds_path = feeds_file(config)
     server = FeedSetupServer(feeds_path)
 
     log.info("")
@@ -97,15 +91,12 @@ def run_onboarding(config: dict, push_display: bool) -> bool:
 
 def _push_screen(config: dict, kind: str, **kwargs) -> None:
     """Draw a setup screen to the panel; never fatal if the panel is absent."""
-    display_cfg = config.get("display", {})
-    raw_font = display_cfg.get("font_path", "")
-    font_path = (str(_PROJECT_ROOT / raw_font)
-                 if raw_font and not raw_font.startswith("/") else raw_font)
+    font = font_path(config)
     try:
         from gcal_epd.epd import push_to_display
         from gcal_epd.render.draw import render_setup, render_setup_success
-        img = (render_setup(kwargs["url"], pin=kwargs.get("pin", ""), font_path=font_path)
-               if kind == "setup" else render_setup_success(font_path=font_path))
+        img = (render_setup(kwargs["url"], pin=kwargs.get("pin", ""), font_path=font)
+               if kind == "setup" else render_setup_success(font_path=font))
         push_to_display(img)
     except Exception as e:
         log.warning("Could not draw the %s screen: %s", kind, e)
@@ -113,7 +104,7 @@ def _push_screen(config: dict, kind: str, **kwargs) -> None:
 
 def _confirm_reset(config: dict, assume_yes: bool = False) -> bool:
     """Confirm, then delete the saved feeds. True if the reset went ahead."""
-    feeds_path = _feeds_path(config)
+    feeds_path = feeds_file(config)
     if not feeds_path.exists():
         log.info("Nothing to reset — %s does not exist.", feeds_path.name)
         return True  # fall through to setup anyway
@@ -187,7 +178,7 @@ def main() -> None:
         event_repos=event_repos,
         weather_repo=_build_weather_repo(config),
         config=config,
-        project_root=_PROJECT_ROOT,
+        project_root=PROJECT_ROOT,
         push_display=args.display,
     )
 
