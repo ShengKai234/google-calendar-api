@@ -223,3 +223,90 @@ advertised `systemctl start` as the "manual run", but that unit ends in
 
 Branch: `feat/onboarding-server`, stacked on `refactor/ical-ics-source`.
 Tests 94 -> 160.
+
+## 2026-10-07
+
+### 2026-10-07 — Wi-Fi setup over a hotspot
+
+Moving to a Pi Zero WH, which may be handed a network it has never seen.
+Instead of baking Wi-Fi into the SD image, the Pi now falls back to a
+hotspot with a setup form when no saved network joins within 60 s.
+
+- `infrastructure/wifi/nmcli.py` wraps NetworkManager. Commands are
+  argument lists, never a shell, so a hostile SSID is just a name. Errors
+  from calls carrying a password report nmcli's message, not the command.
+- The Zero W has one radio: hotspot *or* client, and no scanning while the
+  hotspot is up. The controller scans first, and rescans only during
+  retry windows when the hotspot is down anyway.
+- `wlan0` reports "connected" while serving the hotspot too, so
+  `is_connected()` also checks the active connection is not our own AP.
+- No PIN on this form, unlike the feed form: it is reachable only through
+  a hotspot whose password is on the panel, which is already the proof of
+  presence a PIN would provide.
+- Submitting answers the phone first, then switches the radio; a failed
+  join deletes the bad profile (otherwise retried every boot) and brings
+  back the *same* hotspot, so the phone rejoins on its own.
+- Every 5 min of form inactivity the hotspot drops to retry saved
+  networks, so a router slower to boot than the Pi cannot strand it.
+- `epd-wifi-setup.service` is a oneshot with `DefaultDependencies=no`: as
+  a normal oneshot wanted by multi-user.target, boot would never finish
+  while the hotspot waits. `Before=gcal-epd.service` keeps a timer-fired
+  refresh from drawing over the setup screen.
+- `--force` over SSH must be detached with `systemd-run`; the SSH session
+  dies with the Wi-Fi and SIGHUP would take a foreground run with it.
+
+Not verified on hardware yet: the nmcli calls are tested against a fake,
+and the QR codes were checked by eye, not decoded.
+
+Branch: `feat/wifi-ap-mode`. Tests 161 -> 216.
+
+**2026-10-18 follow-up — pin the hotspot address.** `10.42.0.1` was an
+assumption: `nmcli device wifi hotspot` lets NetworkManager pick the first
+free `10.42.x.0/24`, so another shared connection (say a `usb0` gadget)
+would move the hotspot to `10.42.1.1` while the panel QR still said
+`10.42.0.1`. The hotspot is now built with `connection add` and
+`ipv4.addresses 10.42.0.1/24`. Pinning alone is not enough — NetworkManager
+accepts the same subnet on two interfaces and routing just breaks — so
+`start_hotspot` first checks no other device holds `10.42.0.x` and fails
+with a message naming it. Tests 216 -> 219.
+
+**2026-10-18 follow-up — join the Wi-Fi and calendar flows.** Two gaps
+between the setups, found walking the boot path end to end:
+- A Pi that booted straight onto a known network (Wi-Fi from Imager) left
+  `epd-wifi-setup` with nothing to do, and nothing else ran until the
+  07:00/19:00 timer — a blank panel and no calendar setup QR for hours.
+  The hand-over now fires on "online" as well as "joined".
+- The hand-over started `gcal-epd.service`, which with no feeds opens the
+  10-minute setup form — under `TimeoutStartSec=120`. systemd killed the
+  form at two minutes. The form now has its own `epd-feed-setup.service`
+  (900 s), and the two units carry opposite `ConditionPathExists` on
+  `ics_feeds.toml`, so systemd picks the right one with no code knowing
+  about the other. `gcal-epd.service` passes the new `--no-setup`, so the
+  scheduled refresh never waits on a person even if the file is empty.
+Tests 219 -> 225.
+
+**2026-10-18 follow-up — slow Wi-Fi form, found on hardware.** The form
+loaded slowly from a phone. Two causes, both in the serving model:
+- It was a single-threaded `HTTPServer` with no socket timeout. Browsers
+  open speculative connections they may never send on; the server sat in
+  that idle socket while the real request waited. Reproduced locally: one
+  idle connection held the page for over 8 s.
+- `handle_request()` ran only from the controller loop, which blocks for
+  ~40 s on every panel refresh — e.g. reloading the page right after a
+  wrong password, while the panel is drawing the error.
+The form now runs as a `ThreadingHTTPServer` on its own thread with a
+10 s per-connection timeout; the controller only waits on an Event for a
+submission. Tests 225 -> 228.
+
+**2026-10-18 follow-up — units become templates.** `/home/admin/google-calendar-api`
+was hardcoded once in `gcal-epd.service` on `develop`; this branch had spread
+it to 10 places across three units, two of them `ConditionPathExists` lines
+that pick which unit runs — so a wrong path would not fail, it would just
+silently skip the unit. The units now carry `@PROJECT_DIR@`, `@USER@` and
+`@FEEDS_FILE@`; `install.sh` fills them from the checkout's own location, its
+owner, and `config.toml`'s `feeds_file` (asked of the app itself via
+`_feeds_path`, so the two cannot disagree), refuses a path systemd cannot
+take, and refuses to install a unit with a placeholder left unfilled.
+`%h` was no help: in a system unit it is root's home. A test pins that no
+unit names `/home/` and that every placeholder is one install.sh fills.
+Tests 228 -> 238.

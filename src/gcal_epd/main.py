@@ -159,6 +159,11 @@ def main() -> None:
         action="store_true",
         help="Serve the calendar setup form even if feeds are already configured",
     )
+    parser.add_argument(
+        "--no-setup",
+        action="store_true",
+        help="Never wait on the setup form, even with no feeds (for the timer)",
+    )
     args = parser.parse_args()
 
     config = load_config()
@@ -169,8 +174,10 @@ def main() -> None:
 
     event_repos = _build_event_repos(config)
 
-    # With no feeds there is nothing to show, so onboarding runs on its own.
-    if args.setup or args.reset or not event_repos:
+    # With no feeds there is nothing to show, so onboarding runs on its own —
+    # unless this is the scheduled refresh, which must not wait on a person
+    # (its unit has a short timeout; epd-feed-setup.service owns the form).
+    if args.setup or args.reset or (not event_repos and not args.no_setup):
         if run_onboarding(config, push_display=args.display):
             event_repos = _build_event_repos(config)
         else:
