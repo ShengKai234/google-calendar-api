@@ -2,13 +2,16 @@
 Description=Google Calendar e-Paper Display
 After=network-online.target
 Wants=network-online.target
+# Scheduled refresh only once calendars are set up; until then
+# epd-feed-setup.service runs instead (it has the opposite condition).
+ConditionPathExists=/home/admin/google-calendar-api/ics_feeds.toml
 
 [Service]
 Type=oneshot
 User=admin
 WorkingDirectory=/home/admin/google-calendar-api
 
-ExecStart=/home/admin/google-calendar-api/.venv/bin/python -m gcal_epd.main --display
+ExecStart=/home/admin/google-calendar-api/.venv/bin/python -m gcal_epd.main --display --no-setup
 
 # Shutdown after display refresh (e-ink retains image when powered off)
 # Disabled: Pi Zero has no RTC wake-up, so it would stay off and miss the

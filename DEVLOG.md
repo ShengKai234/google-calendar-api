@@ -269,3 +269,18 @@ would move the hotspot to `10.42.1.1` while the panel QR still said
 accepts the same subnet on two interfaces and routing just breaks — so
 `start_hotspot` first checks no other device holds `10.42.0.x` and fails
 with a message naming it. Tests 216 -> 219.
+
+**2026-10-18 follow-up — join the Wi-Fi and calendar flows.** Two gaps
+between the setups, found walking the boot path end to end:
+- A Pi that booted straight onto a known network (Wi-Fi from Imager) left
+  `epd-wifi-setup` with nothing to do, and nothing else ran until the
+  07:00/19:00 timer — a blank panel and no calendar setup QR for hours.
+  The hand-over now fires on "online" as well as "joined".
+- The hand-over started `gcal-epd.service`, which with no feeds opens the
+  10-minute setup form — under `TimeoutStartSec=120`. systemd killed the
+  form at two minutes. The form now has its own `epd-feed-setup.service`
+  (900 s), and the two units carry opposite `ConditionPathExists` on
+  `ics_feeds.toml`, so systemd picks the right one with no code knowing
+  about the other. `gcal-epd.service` passes the new `--no-setup`, so the
+  scheduled refresh never waits on a person even if the file is empty.
+Tests 219 -> 225.

@@ -187,3 +187,22 @@ def test_no_retry_while_someone_is_using_the_form():
     result, _, _ = _run(nm, ["get"] * 6, retry_interval=2, idle_grace=30)
     assert result == "cancelled"
     assert "stop_hotspot" not in nm.log
+
+
+# --- hand-over to the calendar ---
+
+UNITS = ["gcal-epd.service", "epd-feed-setup.service"]
+
+
+@pytest.mark.parametrize("result", ["online", "joined"])
+def test_start_units_once_there_is_a_network(result):
+    """Booting straight onto a known network must still refresh the panel."""
+    calls = []
+    wifi_setup.start_units(result, UNITS, run=lambda cmd, check: calls.append(cmd))
+    assert calls == [["systemctl", "start", "--no-block", u] for u in UNITS]
+
+
+def test_start_units_not_when_cancelled():
+    calls = []
+    wifi_setup.start_units("cancelled", UNITS, run=lambda cmd, check: calls.append(cmd))
+    assert calls == []

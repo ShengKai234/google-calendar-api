@@ -7,7 +7,9 @@ After=basic.target NetworkManager.service
 Wants=NetworkManager.service
 Conflicts=shutdown.target
 # Keep the calendar refresh off the panel until Wi-Fi setup is done.
-Before=shutdown.target gcal-epd.service
+# Once online it starts both units below; exactly one passes its
+# ConditionPathExists, depending on whether ics_feeds.toml exists.
+Before=shutdown.target gcal-epd.service epd-feed-setup.service
 
 [Service]
 Type=oneshot
@@ -16,7 +18,8 @@ User=root
 WorkingDirectory=/home/admin/google-calendar-api
 # Do not leave root-owned __pycache__ in the admin user's checkout.
 Environment=PYTHONDONTWRITEBYTECODE=1
-ExecStart=/home/admin/google-calendar-api/.venv/bin/python -m gcal_epd.wifi_setup --display --start-unit gcal-epd.service
+ExecStart=/home/admin/google-calendar-api/.venv/bin/python -m gcal_epd.wifi_setup --display \
+    --start-unit gcal-epd.service --start-unit epd-feed-setup.service
 # Setup waits for a person; there is no sensible deadline.
 TimeoutStartSec=infinity
 StandardOutput=journal

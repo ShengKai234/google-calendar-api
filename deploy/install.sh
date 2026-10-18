@@ -20,7 +20,9 @@ echo "[1/4] Installing systemd units..."
 sudo cp "$PROJECT_DIR/deploy/$SERVICE_NAME.service" /etc/systemd/system/
 sudo cp "$PROJECT_DIR/deploy/$SERVICE_NAME.timer"   /etc/systemd/system/
 sudo cp "$PROJECT_DIR/deploy/epd-wifi-setup.service" /etc/systemd/system/
-echo "      Copied .service, .timer and epd-wifi-setup.service to /etc/systemd/system/"
+# Not enabled on its own: epd-wifi-setup starts it at boot when no feeds exist.
+sudo cp "$PROJECT_DIR/deploy/epd-feed-setup.service" /etc/systemd/system/
+echo "      Copied .service, .timer, epd-wifi-setup and epd-feed-setup to /etc/systemd/system/"
 
 # --- Reload systemd ---
 echo "[2/4] Reloading systemd daemon..."

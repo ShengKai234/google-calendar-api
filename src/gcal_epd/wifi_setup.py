@@ -133,6 +133,21 @@ def _make_push(display: bool) -> Push:
     return push
 
 
+def start_units(result: str, units: list[str], run=subprocess.run) -> None:
+    """Hand over to the calendar once there is a network, however it came.
+
+    Started on "online" as well as "joined": a display that boots straight
+    onto a known network would otherwise sit blank until the next timer
+    run, and never show the calendar setup form at all.
+    """
+    if result not in ("online", "joined"):
+        return
+    for unit in units:
+        # --no-block: these units are ordered after this one, so waiting
+        # for them here would deadlock.
+        run(["systemctl", "start", "--no-block", unit], check=False)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Set up Wi-Fi through a hotspot")
     parser.add_argument("--display", action="store_true",
@@ -140,8 +155,8 @@ def main() -> None:
     parser.add_argument("--force", action="store_true",
                         help="Start the hotspot even if Wi-Fi is already connected")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
-    parser.add_argument("--start-unit", metavar="UNIT",
-                        help="systemd unit to start once Wi-Fi was set up here")
+    parser.add_argument("--start-unit", metavar="UNIT", action="append", default=[],
+                        help="systemd unit to start once Wi-Fi is up (repeatable)")
     args = parser.parse_args()
 
     if not NetworkManager.available():
@@ -153,9 +168,7 @@ def main() -> None:
                  lambda networks: WifiSetupServer(networks, port=args.port),
                  _make_push(args.display), force=args.force)
 
-    if result == "joined" and args.start_unit:
-        # --no-block: that unit is ordered after this one, so waiting would deadlock.
-        subprocess.run(["systemctl", "start", "--no-block", args.start_unit], check=False)
+    start_units(result, args.start_unit)
     if result == "cancelled":
         sys.exit(130)
 

@@ -245,7 +245,20 @@ the Pi becomes a hotspot and the panel shows two QR codes:
 
 The hotspot closes while the Pi tries the network. A wrong password brings
 the same hotspot back with an error on the panel; rejoin and reload the
-page. On success the calendar refresh starts straight away.
+page.
+
+Once the Pi is online — through the form, or straight onto a known network
+at boot — it hands over to the calendar:
+
+| `ics_feeds.toml` | Runs | What you see |
+|---|---|---|
+| missing | `epd-feed-setup.service` | Calendar setup QR + PIN (10 min window) |
+| present | `gcal-epd.service` | Calendar refresh |
+
+Exactly one runs, chosen by each unit's `ConditionPathExists`. The scheduled
+refresh (`gcal-epd.service`) never opens the form itself, so its short
+timeout cannot cut a setup short; if the 10-minute window closes unused,
+reboot or run `.venv/bin/python -m gcal_epd.main --setup --display`.
 
 While waiting, the Pi drops the hotspot every 5 minutes to retry saved
 networks — so a router that boots slower than the Pi does not strand the
