@@ -17,10 +17,7 @@ from gcal_epd.infrastructure.onboarding.server import (
     detect_lan_ip,
     generate_pin,
     probe_feed,
-    render_feeds_toml,
-    reset_feeds,
     validate_feed_url,
-    write_feeds_file,
 )
 
 # A token-shaped string that must never appear in output.
@@ -118,33 +115,6 @@ def test_validate_rejects_everything_else(bad):
 
 def test_validate_strips_surrounding_whitespace():
     assert validate_feed_url("  https://h/a.ics \n") == "https://h/a.ics"
-
-
-# --- writing the feeds file ---
-
-def test_render_feeds_toml_round_trips():
-    feeds = [{"url": "webcal://h/a.ics"}, {"name": "Work", "url": "https://h/b.ics"}]
-    parsed = tomllib.loads(render_feeds_toml(feeds))["feed"]
-    assert [f["url"] for f in parsed] == ["webcal://h/a.ics", "https://h/b.ics"]
-    assert parsed[1]["name"] == "Work"
-
-
-def test_render_feeds_toml_escapes_quotes():
-    parsed = tomllib.loads(render_feeds_toml([{"url": 'https://h/a".ics'}]))["feed"]
-    assert parsed[0]["url"] == 'https://h/a".ics'
-
-
-def test_written_file_is_owner_only(tmp_path):
-    """The file holds live calendar credentials."""
-    path = tmp_path / "ics_feeds.toml"
-    write_feeds_file(path, [{"url": "https://h/a.ics"}])
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
-
-
-def test_written_file_parses_back(tmp_path):
-    path = tmp_path / "ics_feeds.toml"
-    write_feeds_file(path, [{"url": "https://h/a.ics"}])
-    assert tomllib.load(open(path, "rb"))["feed"][0]["url"] == "https://h/a.ics"
 
 
 # --- probing ---
@@ -257,17 +227,6 @@ def test_rejected_pin_does_not_log_the_token(running, feed_server, caplog):
 
 
 # --- reset ---
-
-def test_reset_removes_the_file(tmp_path):
-    path = tmp_path / "ics_feeds.toml"
-    write_feeds_file(path, [{"url": "https://h/a.ics"}])
-    assert reset_feeds(path) is True
-    assert not path.exists()
-
-
-def test_reset_is_safe_when_nothing_saved(tmp_path):
-    assert reset_feeds(tmp_path / "missing.toml") is False
-
 
 def test_setup_url_is_http_on_the_lan(setup_server):
     setup_server.ip = "192.168.0.5"

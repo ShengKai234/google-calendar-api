@@ -49,3 +49,13 @@ def test_wifi_setup_does_not_import_main():
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
                          env={"PYTHONPATH": str(src)}, check=True).stdout.strip()
     assert out == "False"
+
+
+def test_importing_entry_points_leaves_logging_alone():
+    """basicConfig belongs in main(), not at import: importers keep their logging."""
+    code = ("import logging, gcal_epd.main, gcal_epd.wifi_setup; "
+            "print(len(logging.getLogger().handlers))")
+    src = Path(__file__).parent.parent / "src"
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                         env={"PYTHONPATH": str(src)}, check=True).stdout.strip()
+    assert out == "0"

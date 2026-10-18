@@ -1,46 +1,24 @@
+"""
+Entry point for the calendar: `python -m gcal_epd.main`.
+
+The composition root. It reads the command line, builds the repositories
+from config.toml, decides whether this run is setup or a routine refresh,
+and hands off to the application layer. The work itself lives elsewhere:
+setup in application/setup_service, the refresh in application/
+display_service, the feeds file in infrastructure/feeds_file.
+"""
 import argparse
 import logging
 import sys
-import tomllib
-from pathlib import Path
 
 from gcal_epd.application.display_service import run as run_display
-from gcal_epd.config import (
-    DEFAULT_FEEDS_FILE,
-    PROJECT_ROOT,
-    feeds_file,
-    font_path,
-    load_config,
-)
+from gcal_epd.application.setup_service import run_onboarding
+from gcal_epd.config import DEFAULT_FEEDS_FILE, PROJECT_ROOT, feeds_file, load_config
+from gcal_epd.infrastructure.feeds_file import load_feeds, reset_feeds
 from gcal_epd.infrastructure.ics.repository import ICSRepository
-from gcal_epd.infrastructure.onboarding.server import FeedSetupServer, reset_feeds
 from gcal_epd.infrastructure.open_meteo.repository import OpenMeteoRepository
 
-logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)
-
-_EXAMPLE_FEEDS = "ics_feeds.example.toml"
-
-
-def load_feeds(feeds_path: Path) -> list[dict]:
-    """Read feed definitions from the gitignored feeds file.
-
-    Feed URLs are bearer tokens, so they live outside the tracked config
-    rather than in config.toml.
-    """
-    try:
-        with open(feeds_path, "rb") as f:
-            return tomllib.load(f).get("feed", [])
-    except FileNotFoundError:
-        log.error(
-            "Calendar feed file not found: %s\n"
-            "Copy %s to %s and fill in your feed URLs.",
-            feeds_path.name, _EXAMPLE_FEEDS, feeds_path.name,
-        )
-        return []
-    except tomllib.TOMLDecodeError as e:
-        log.error("Could not parse %s: %s", feeds_path.name, e)
-        return []
 
 
 def _build_event_repos(config: dict) -> list[ICSRepository]:
@@ -67,39 +45,6 @@ def _build_weather_repo(config: dict) -> OpenMeteoRepository | None:
                 location=source.get("location", "Taipei"),
             )
     return None
-
-
-def run_onboarding(config: dict, push_display: bool) -> bool:
-    """Serve the setup form, showing the address and PIN on the panel."""
-    feeds_path = feeds_file(config)
-    server = FeedSetupServer(feeds_path)
-
-    log.info("")
-    log.info("  Calendar setup — open this on your phone:")
-    log.info("      %s", server.url)
-    log.info("      PIN: %s", server.pin)
-    log.info("")
-
-    if push_display:
-        _push_screen(config, "setup", url=server.url, pin=server.pin)
-
-    saved = server.serve_until_configured()
-    if saved and push_display:
-        _push_screen(config, "success")
-    return saved
-
-
-def _push_screen(config: dict, kind: str, **kwargs) -> None:
-    """Draw a setup screen to the panel; never fatal if the panel is absent."""
-    font = font_path(config)
-    try:
-        from gcal_epd.epd import push_to_display
-        from gcal_epd.render.draw import render_setup, render_setup_success
-        img = (render_setup(kwargs["url"], pin=kwargs.get("pin", ""), font_path=font)
-               if kind == "setup" else render_setup_success(font_path=font))
-        push_to_display(img)
-    except Exception as e:
-        log.warning("Could not draw the %s screen: %s", kind, e)
 
 
 def _confirm_reset(config: dict, assume_yes: bool = False) -> bool:
@@ -157,6 +102,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # Configured here, not at import, so importing this module (tests, tools)
+    # never changes the importer's logging.
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     config = load_config()
 
     if args.reset and not _confirm_reset(config, assume_yes=args.yes):

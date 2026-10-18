@@ -328,3 +328,29 @@ checkout" was written out three times: `main._push_screen`,
 `install.sh` read settings from it. A test runs the Wi-Fi panel path in a
 fresh interpreter and asserts `gcal_epd.main` was never imported; it fails
 against the old code. Behaviour is unchanged. Tests 238 -> 246.
+
+### 2026-10-18 — main.py back to a composition root
+
+Reviewing where `main.py` sits in the architecture: of its jobs, four belong
+to an entry point (parse args, build the repositories, pick setup vs refresh,
+the interactive `--reset` prompt) and two did not.
+
+- **The feeds file had two owners.** `onboarding/server.py` wrote it
+  (`render_feeds_toml`, `write_feeds_file`, `reset_feeds`) while `main.py`
+  read it (`load_feeds`). All four now live in
+  `infrastructure/feeds_file.py`, with a round-trip test: the module must
+  read back exactly what it writes.
+- **The setup flow lived in the entry point.** The refresh had an
+  application service (`display_service`) but setup was inline in `main.py`.
+  `run_onboarding` and the panel push moved to
+  `application/setup_service.py`. `feat/one-step-setup` will grow this
+  flow, so it now has a home that is not the entry point.
+- **Both entry points called `logging.basicConfig` at import**, so
+  importing either (tests, tools, and formerly `wifi_setup` importing
+  `main`) reconfigured the importer's logging. Moved into each `main()`;
+  a test checks importing both leaves the root logger without handlers,
+  and fails against the old code.
+
+Left as is: `_build_event_repos` reads every ics source's `feeds_file`,
+while setup and reset use only the first. Harmless with the one source in
+`config.toml`. No behaviour change. Tests 246 -> 253.
