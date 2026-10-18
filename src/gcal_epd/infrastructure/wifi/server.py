@@ -9,13 +9,20 @@ The radio cannot be a hotspot and a client at once, so submitting the form
 drops the phone's connection. The handler only records the request and
 answers straight away; the controller does the switch after the reply has
 gone out.
+
+The server runs on its own thread, one thread per connection. Browsers
+open speculative connections they may never send a request on; served one
+at a time, a single idle socket held the real page until the browser gave
+up on it. And the controller blocks for ~40 s on every panel refresh — the
+form must keep answering through that.
 """
 import logging
 import secrets
 import string
+import threading
 import time
 from html import escape
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs
 
 from gcal_epd.infrastructure.wifi.nmcli import AP_ADDRESS, Network, is_valid_psk
@@ -24,6 +31,7 @@ log = logging.getLogger(__name__)
 
 DEFAULT_PORT = 80
 _MAX_BODY = 8 * 1024
+_IDLE_TIMEOUT = 10  # seconds a connection may sit without sending a request
 _MAX_SSID_BYTES = 32
 _OTHER = "__other__"
 # No 0/o, 1/l/i: the password may have to be typed off the panel.
@@ -102,6 +110,7 @@ display — rejoin it and reload this page to try again.</p>
 
 class _Handler(BaseHTTPRequestHandler):
     server_version = "gcal-epd"
+    timeout = _IDLE_TIMEOUT  # drop speculative connections that never send
 
     def log_message(self, fmt, *args):
         pass  # keep request lines (and anything in them) out of the journal
@@ -156,21 +165,28 @@ class _Handler(BaseHTTPRequestHandler):
             return
 
         self._send(_CONNECTING.format(ssid=escape(ssid)))
-        self.server.pending = (ssid, password)
+        with self.server.lock:
+            self.server.pending = (ssid, password)
+        self.server.submitted.set()
         log.info("Wi-Fi setup: received credentials for %r", ssid)
 
 
 class WifiSetupServer:
-    """The form, driven one request at a time by the controller's loop."""
+    """The form, served in the background; the controller polls for a submission."""
 
     def __init__(self, networks: list[Network], port: int = DEFAULT_PORT) -> None:
         self.port = port
-        self._httpd = HTTPServer(("0.0.0.0", port), _Handler)
-        self._httpd.timeout = 1
+        self._httpd = ThreadingHTTPServer(("0.0.0.0", port), _Handler)
+        self._httpd.daemon_threads = True
         self._httpd.networks = list(networks)
         self._httpd.error = ""
         self._httpd.pending = None
+        self._httpd.lock = threading.Lock()
+        self._httpd.submitted = threading.Event()
         self._httpd.last_activity = float("-inf")
+        self._thread = threading.Thread(target=self._httpd.serve_forever,
+                                         kwargs={"poll_interval": 0.5}, daemon=True)
+        self._thread.start()
 
     @property
     def url(self) -> str:
@@ -187,12 +203,15 @@ class WifiSetupServer:
         self._httpd.error = error
 
     def handle_once(self) -> None:
-        """Serve at most one request, waiting up to a second for it."""
-        self._httpd.handle_request()
+        """Wait up to a second for a submission; requests are served meanwhile."""
+        self._httpd.submitted.wait(1)
 
     def take_pending(self) -> tuple[str, str] | None:
-        pending, self._httpd.pending = self._httpd.pending, None
+        with self._httpd.lock:
+            pending, self._httpd.pending = self._httpd.pending, None
+            self._httpd.submitted.clear()
         return pending
 
     def close(self) -> None:
+        self._httpd.shutdown()
         self._httpd.server_close()

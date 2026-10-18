@@ -284,3 +284,16 @@ between the setups, found walking the boot path end to end:
   about the other. `gcal-epd.service` passes the new `--no-setup`, so the
   scheduled refresh never waits on a person even if the file is empty.
 Tests 219 -> 225.
+
+**2026-10-18 follow-up — slow Wi-Fi form, found on hardware.** The form
+loaded slowly from a phone. Two causes, both in the serving model:
+- It was a single-threaded `HTTPServer` with no socket timeout. Browsers
+  open speculative connections they may never send on; the server sat in
+  that idle socket while the real request waited. Reproduced locally: one
+  idle connection held the page for over 8 s.
+- `handle_request()` ran only from the controller loop, which blocks for
+  ~40 s on every panel refresh — e.g. reloading the page right after a
+  wrong password, while the panel is drawing the error.
+The form now runs as a `ThreadingHTTPServer` on its own thread with a
+10 s per-connection timeout; the controller only waits on an Event for a
+submission. Tests 225 -> 228.

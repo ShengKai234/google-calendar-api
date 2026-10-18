@@ -1,5 +1,6 @@
 """Tests for the Wi-Fi setup form."""
-import threading
+import socket
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -26,19 +27,14 @@ def server():
     srv.close()
 
 
-def _request(srv, data: dict | None = None):
-    """Send one request while the server handles exactly one."""
+def _request(srv, data: dict | None = None, timeout: float = 5):
     url = f"http://127.0.0.1:{srv.port}/"
     body = urllib.parse.urlencode(data).encode() if data is not None else None
-    t = threading.Thread(target=srv.handle_once)
-    t.start()
     try:
-        with urllib.request.urlopen(url, data=body, timeout=5) as r:
+        with urllib.request.urlopen(url, data=body, timeout=timeout) as r:
             return r.status, r.read().decode()
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode()
-    finally:
-        t.join(5)
 
 
 # --- helpers ---
@@ -126,3 +122,31 @@ def test_requests_update_last_activity(server):
     before = server.last_activity
     _request(server)
     assert server.last_activity > before
+
+
+# --- responsiveness ---
+
+def test_idle_connection_does_not_block_the_page(server):
+    """A browser preconnect that never sends must not hold up the real request."""
+    idle = socket.create_connection(("127.0.0.1", server.port))
+    try:
+        start = time.monotonic()
+        status, _ = _request(server, timeout=3)
+        assert status == 200
+        assert time.monotonic() - start < 1
+    finally:
+        idle.close()
+
+
+def test_form_answers_while_the_controller_is_busy(server):
+    """The controller blocks ~40 s per panel refresh; nothing calls handle_once then."""
+    status, _ = _request(server, timeout=3)
+    assert status == 200
+
+
+def test_handle_once_returns_early_on_submission(server):
+    _request(server, {"ssid": "Home", "password": "correct-horse"})
+    start = time.monotonic()
+    server.handle_once()
+    assert time.monotonic() - start < 0.5
+    assert server.take_pending() == ("Home", "correct-horse")
