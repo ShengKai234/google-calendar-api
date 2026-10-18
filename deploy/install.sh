@@ -15,14 +15,55 @@ if ! grep -q "Raspberry Pi" /proc/cpuinfo 2>/dev/null; then
     case "$confirm" in [Yy]) ;; *) exit 1 ;; esac
 fi
 
-# --- Copy systemd units ---
+# --- Values the unit templates need ---
+# The units are templates: the paths and user below are filled in here, so
+# the checkout can live anywhere and belong to any user.
+PYTHON="$PROJECT_DIR/.venv/bin/python"
+if [ ! -x "$PYTHON" ]; then
+    echo "Error: $PYTHON not found — run deploy/setup.sh first."
+    exit 1
+fi
+RUN_USER="$(stat -c %U "$PROJECT_DIR")"
+# Ask the app itself, so the units and config.toml's feeds_file never disagree.
+FEEDS_FILE="$(cd "$PROJECT_DIR" && "$PYTHON" -c \
+    'from gcal_epd.main import _feeds_path, load_config; print(_feeds_path(load_config()))')"
+
+for value in "$PROJECT_DIR" "$FEEDS_FILE"; do
+    case "$value" in
+        *[[:space:]]*|*"|"*)
+            echo "Error: '$value' contains a space or '|'; systemd units cannot use it as is."
+            exit 1 ;;
+    esac
+done
+
+echo "      Project : $PROJECT_DIR"
+echo "      User    : $RUN_USER"
+echo "      Feeds   : $FEEDS_FILE"
+
+install_unit() {
+    local name="$1"
+    local rendered
+    # The first two lines are the template note; the installed unit drops them.
+    rendered="$(sed -e '1,2{/^# /d;}' \
+                    -e "s|@PROJECT_DIR@|$PROJECT_DIR|g" \
+                    -e "s|@USER@|$RUN_USER|g" \
+                    -e "s|@FEEDS_FILE@|$FEEDS_FILE|g" \
+                    "$PROJECT_DIR/deploy/$name")"
+    if grep -q "@[A-Z_]*@" <<< "$rendered"; then
+        echo "Error: deploy/$name has a placeholder this script does not fill."
+        exit 1
+    fi
+    printf '%s\n' "$rendered" | sudo tee "/etc/systemd/system/$name" > /dev/null
+}
+
+# --- Install systemd units ---
 echo "[1/4] Installing systemd units..."
-sudo cp "$PROJECT_DIR/deploy/$SERVICE_NAME.service" /etc/systemd/system/
-sudo cp "$PROJECT_DIR/deploy/$SERVICE_NAME.timer"   /etc/systemd/system/
-sudo cp "$PROJECT_DIR/deploy/epd-wifi-setup.service" /etc/systemd/system/
+install_unit "$SERVICE_NAME.service"
+install_unit "$SERVICE_NAME.timer"
+install_unit epd-wifi-setup.service
 # Not enabled on its own: epd-wifi-setup starts it at boot when no feeds exist.
-sudo cp "$PROJECT_DIR/deploy/epd-feed-setup.service" /etc/systemd/system/
-echo "      Copied .service, .timer, epd-wifi-setup and epd-feed-setup to /etc/systemd/system/"
+install_unit epd-feed-setup.service
+echo "      Installed $SERVICE_NAME.service/.timer, epd-wifi-setup and epd-feed-setup"
 
 # --- Reload systemd ---
 echo "[2/4] Reloading systemd daemon..."

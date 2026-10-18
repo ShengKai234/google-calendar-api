@@ -297,3 +297,16 @@ loaded slowly from a phone. Two causes, both in the serving model:
 The form now runs as a `ThreadingHTTPServer` on its own thread with a
 10 s per-connection timeout; the controller only waits on an Event for a
 submission. Tests 225 -> 228.
+
+**2026-10-18 follow-up — units become templates.** `/home/admin/google-calendar-api`
+was hardcoded once in `gcal-epd.service` on `develop`; this branch had spread
+it to 10 places across three units, two of them `ConditionPathExists` lines
+that pick which unit runs — so a wrong path would not fail, it would just
+silently skip the unit. The units now carry `@PROJECT_DIR@`, `@USER@` and
+`@FEEDS_FILE@`; `install.sh` fills them from the checkout's own location, its
+owner, and `config.toml`'s `feeds_file` (asked of the app itself via
+`_feeds_path`, so the two cannot disagree), refuses a path systemd cannot
+take, and refuses to install a unit with a placeholder left unfilled.
+`%h` was no help: in a system unit it is root's home. A test pins that no
+unit names `/home/` and that every placeholder is one install.sh fills.
+Tests 228 -> 238.

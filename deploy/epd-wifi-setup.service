@@ -1,3 +1,5 @@
+# Template — deploy/install.sh fills in @PROJECT_DIR@, @USER@ and @FEEDS_FILE@.
+# Install with that script; a copy made by hand will not start.
 [Unit]
 Description=e-Paper Wi-Fi setup (hotspot when no network)
 # Default dependencies off: multi-user.target would otherwise wait on this
@@ -8,17 +10,17 @@ Wants=NetworkManager.service
 Conflicts=shutdown.target
 # Keep the calendar refresh off the panel until Wi-Fi setup is done.
 # Once online it starts both units below; exactly one passes its
-# ConditionPathExists, depending on whether ics_feeds.toml exists.
+# ConditionPathExists, depending on whether the feeds file exists.
 Before=shutdown.target gcal-epd.service epd-feed-setup.service
 
 [Service]
 Type=oneshot
 # Root: nmcli must change connections and the form listens on port 80.
 User=root
-WorkingDirectory=/home/admin/google-calendar-api
-# Do not leave root-owned __pycache__ in the admin user's checkout.
+WorkingDirectory=@PROJECT_DIR@
+# Do not leave root-owned __pycache__ in the checkout owner's files.
 Environment=PYTHONDONTWRITEBYTECODE=1
-ExecStart=/home/admin/google-calendar-api/.venv/bin/python -m gcal_epd.wifi_setup --display \
+ExecStart=@PROJECT_DIR@/.venv/bin/python -m gcal_epd.wifi_setup --display \
     --start-unit gcal-epd.service --start-unit epd-feed-setup.service
 # Setup waits for a person; there is no sensible deadline.
 TimeoutStartSec=infinity
