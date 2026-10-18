@@ -126,6 +126,17 @@ def test_start_hotspot_pins_address_and_disables_autoconnect():
     assert fake.called("connection", "up", AP_CONNECTION)
 
 
+def test_start_hotspot_is_wpa2_aes_with_pmf_off():
+    """On Trixie the Zero W's AP only comes up with PMF off (found on hardware);
+    turning PMF off must not cost the encryption."""
+    fake = FakeNmcli()
+    _nm(fake).start_hotspot("X", "abcdefgh23")
+    add = fake.called("connection", "add")[0]
+    assert add[add.index("wifi-sec.pmf") + 1] == "disable"
+    assert add[add.index("wifi-sec.key-mgmt") + 1] == "wpa-psk"
+    assert add[add.index("wifi-sec.pairwise") + 1] == "ccmp"
+
+
 def test_start_hotspot_refuses_when_another_interface_has_the_subnet():
     """NetworkManager would accept the clash and routing would break quietly."""
     out = ("GENERAL.DEVICE:wlan0\nGENERAL.DEVICE:usb0\n"
