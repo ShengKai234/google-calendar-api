@@ -6,7 +6,7 @@ import pytest
 
 DEPLOY = Path(__file__).parent.parent.parent / "deploy"
 UNITS = sorted(DEPLOY.glob("*.service")) + sorted(DEPLOY.glob("*.timer"))
-FILLED_BY_INSTALL = {"PROJECT_DIR", "USER", "FEEDS_FILE"}
+FILLED_BY_INSTALL = {"PROJECT_DIR", "USER", "FEEDS_FILE", "PENDING_FILE"}
 
 
 @pytest.mark.parametrize("unit", UNITS, ids=lambda p: p.name)

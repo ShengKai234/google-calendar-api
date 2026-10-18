@@ -25,6 +25,7 @@ from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs
 
+from gcal_epd.infrastructure.onboarding.server import validate_feed_url
 from gcal_epd.infrastructure.wifi.nmcli import AP_ADDRESS, Network, is_valid_psk
 
 log = logging.getLogger(__name__)
@@ -47,6 +48,23 @@ def generate_ap_password(length: int = 10) -> str:
     return "".join(secrets.choice(_PASSWORD_ALPHABET) for _ in range(length))
 
 
+def parse_feed_links(raw: str) -> list[str]:
+    """One link per line, blanks skipped; raise ValueError on a bad one.
+
+    Only the form is checked here — the hotspot has no internet, so whether
+    a link really serves a calendar is checked after Wi-Fi joins.
+    """
+    links = []
+    for line in raw.splitlines():
+        if not line.strip():
+            continue
+        try:
+            links.append(validate_feed_url(line))
+        except ValueError as e:
+            raise ValueError(f"Calendar link: {e}.") from None
+    return links
+
+
 def validate_credentials(ssid: str, password: str) -> tuple[str, str]:
     """Return the cleaned pair, or raise ValueError explaining what is wrong."""
     if not ssid:
@@ -67,7 +85,7 @@ max-width:34rem;margin-inline:auto}}
 h1{{font-size:1.3rem;margin:0 0 .25rem}}
 p.sub{{margin:0 0 1.5rem;opacity:.7}}
 label{{display:block;margin:1rem 0 .3rem;font-weight:600}}
-input,select{{width:100%;box-sizing:border-box;padding:.6rem;font-size:16px;
+input,select,textarea{{width:100%;box-sizing:border-box;padding:.6rem;font-size:16px;
 border:1px solid #8888;border-radius:8px;background:transparent;color:inherit;
 font-family:inherit}}
 small{{opacity:.7;display:block;margin-top:.3rem}}
@@ -91,6 +109,11 @@ border:0;border-radius:8px;background:#2563eb;color:#fff}}
 <label for="password">Password</label>
 <input id="password" name="password" type="password" autocomplete="off">
 <small>Leave empty for an open network.</small>
+<label for="feeds">Calendar links (optional)</label>
+<textarea id="feeds" name="feeds" rows="4" autocomplete="off" autocapitalize="off"
+ placeholder="webcal://p1-caldav.icloud.com/published/2/...">{feeds_value}</textarea>
+<small>One per line. Checked once the display is online — if one fails, the
+display shows a QR to fix it. Leave empty to keep the current calendars.</small>
 <button type="submit">Connect</button>
 </form></body></html>"""
 
@@ -105,6 +128,7 @@ h1{{font-size:1.4rem}}
 Watch the display.</p>
 <p>If it cannot connect, the hotspot comes back with an error on the
 display — rejoin it and reload this page to try again.</p>
+<p>{feeds_note}</p>
 </body></html>"""
 
 
@@ -125,7 +149,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def _page(self, error: str = "", selected: str = "", other: str = "",
-              status: int = 200) -> None:
+              feeds: str = "", status: int = 200) -> None:
         options = []
         for net in self.server.networks:
             mark = "" if net.secure else " (open)"
@@ -134,7 +158,8 @@ class _Handler(BaseHTTPRequestHandler):
                            f'{escape(net.ssid)}{mark}</option>')
         message = f'<div class="msg err">{escape(error)}</div>' if error else ""
         self._send(_PAGE.format(message=message, options="".join(options),
-                                other=_OTHER, other_value=escape(other)), status)
+                                other=_OTHER, other_value=escape(other),
+                                feeds_value=escape(feeds)), status)
 
     def do_GET(self) -> None:
         # Any path gets the form: phones probing for a captive portal land here.
@@ -156,17 +181,22 @@ class _Handler(BaseHTTPRequestHandler):
         choice = (form.get("ssid") or [""])[0]
         other = (form.get("other_ssid") or [""])[0].strip()
         password = (form.get("password") or [""])[0]
+        raw_feeds = (form.get("feeds") or [""])[0]
         ssid = other if choice == _OTHER else choice
 
         try:
             ssid, password = validate_credentials(ssid, password)
+            feeds = parse_feed_links(raw_feeds)
         except ValueError as e:
-            self._page(str(e), selected=choice, other=other, status=400)
+            self._page(str(e), selected=choice, other=other, feeds=raw_feeds, status=400)
             return
 
-        self._send(_CONNECTING.format(ssid=escape(ssid)))
+        note = (f"Then {len(feeds)} calendar link(s) will be checked and the "
+                "calendar shown." if feeds else
+                "Then the display shows a QR to add your calendars, if none are set up.")
+        self._send(_CONNECTING.format(ssid=escape(ssid), feeds_note=note))
         with self.server.lock:
-            self.server.pending = (ssid, password)
+            self.server.pending = (ssid, password, feeds)
         self.server.submitted.set()
         log.info("Wi-Fi setup: received credentials for %r", ssid)
 
@@ -206,7 +236,7 @@ class WifiSetupServer:
         """Wait up to a second for a submission; requests are served meanwhile."""
         self._httpd.submitted.wait(1)
 
-    def take_pending(self) -> tuple[str, str] | None:
+    def take_pending(self) -> tuple[str, str, list[str]] | None:
         with self._httpd.lock:
             pending, self._httpd.pending = self._httpd.pending, None
             self._httpd.submitted.clear()

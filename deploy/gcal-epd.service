@@ -1,12 +1,13 @@
-# Template — deploy/install.sh fills in @PROJECT_DIR@, @USER@ and @FEEDS_FILE@.
+# Template — deploy/install.sh fills in @PROJECT_DIR@, @USER@, @FEEDS_FILE@ and @PENDING_FILE@.
 # Install with that script; a copy made by hand will not start.
 [Unit]
 Description=Google Calendar e-Paper Display
 After=network-online.target
 Wants=network-online.target
-# Scheduled refresh only once calendars are set up; until then
-# epd-feed-setup.service runs instead (it has the opposite condition).
+# Scheduled refresh only once calendars are set up and no links from the
+# Wi-Fi form wait to be checked; otherwise epd-feed-setup.service runs.
 ConditionPathExists=@FEEDS_FILE@
+ConditionPathExists=!@PENDING_FILE@
 
 [Service]
 Type=oneshot

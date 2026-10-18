@@ -12,9 +12,9 @@ import logging
 import sys
 
 from gcal_epd.application.display_service import run as run_display
-from gcal_epd.application.setup_service import run_onboarding
+from gcal_epd.application.setup_service import apply_pending_feeds, run_onboarding
 from gcal_epd.config import DEFAULT_FEEDS_FILE, PROJECT_ROOT, feeds_file, load_config
-from gcal_epd.infrastructure.feeds_file import load_feeds, reset_feeds
+from gcal_epd.infrastructure.feeds_file import load_feeds, pending_feeds_path, reset_feeds
 from gcal_epd.infrastructure.ics.repository import ICSRepository
 from gcal_epd.infrastructure.open_meteo.repository import OpenMeteoRepository
 
@@ -111,13 +111,23 @@ def main() -> None:
         log.info("Reset cancelled — feeds left untouched.")
         return
 
+    # Links typed into the Wi-Fi hotspot form could not be checked offline;
+    # check them now, and on failure reopen setup saying why.
+    pending_error = ""
+    pending = pending_feeds_path(feeds_file(config))
+    if pending.exists():
+        pending_error = apply_pending_feeds(pending, feeds_file(config))
+        if pending_error:
+            log.warning("Calendar links from Wi-Fi setup failed: %s", pending_error)
+
     event_repos = _build_event_repos(config)
 
     # With no feeds there is nothing to show, so onboarding runs on its own —
     # unless this is the scheduled refresh, which must not wait on a person
     # (its unit has a short timeout; epd-feed-setup.service owns the form).
-    if args.setup or args.reset or (not event_repos and not args.no_setup):
-        if run_onboarding(config, push_display=args.display):
+    needs_setup = (not event_repos or pending_error) and not args.no_setup
+    if args.setup or args.reset or needs_setup:
+        if run_onboarding(config, push_display=args.display, error=pending_error):
             event_repos = _build_event_repos(config)
         else:
             log.warning("No calendar feeds configured — rendering an empty calendar.")

@@ -336,11 +336,13 @@ def render_setup(
     pin: str = "",
     output_path: str = "",
     font_path: str = "",
+    error: str = "",
 ) -> Image.Image:
     """Render the one-time setup screen.
 
     The QR carries this device's own LAN address, not a secret — it is only
-    a shortcut so the phone does not have to type an IP.
+    a shortcut so the phone does not have to type an IP. `error` says why
+    setup reopened, e.g. a calendar link from the Wi-Fi form that failed.
     """
     img = Image.new("RGB", (WIDTH, HEIGHT), BG)
     draw = ImageDraw.Draw(img)
@@ -405,6 +407,11 @@ def render_setup(
     ):
         _text(draw, (text_x, y), line, fonts["sm"], FG)
         y += 19
+
+    if error:
+        _text(draw, (PADDING, HEIGHT - PADDING - 30),
+              _truncate(draw, error, fonts["lg"], WIDTH - 2 * PADDING),
+              fonts["lg"], PALETTE["red"], bold=1)
 
     if output_path:
         img.save(output_path)

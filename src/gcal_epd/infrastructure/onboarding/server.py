@@ -79,6 +79,39 @@ def probe_feed(url: str, timeout: int = 20) -> int:
     return len(events_from_ics(repo.fetch_raw(), days_ahead=365, max_results=1000))
 
 
+def inspect_feed(url: str, timeout: int = 20) -> tuple[int, str]:
+    """Return (upcoming event count, "") if the feed works, else (0, problem).
+
+    The problem names only the host — it goes on the panel and the form,
+    and the full URL is a bearer token.
+    """
+    import requests
+
+    from gcal_epd.infrastructure.ics.repository import (
+        ICSRepository,
+        events_from_ics,
+        normalize_feed_url,
+    )
+
+    host = urlsplit(normalize_feed_url(url)).netloc or "that link"
+    try:
+        raw = ICSRepository(url=url, timeout=timeout).fetch_raw()
+    except requests.HTTPError as e:
+        code = e.response.status_code if e.response is not None else "an error"
+        return 0, f"The calendar at {host} answered {code}."
+    except Exception:
+        return 0, f"Could not download the calendar from {host}."
+    try:
+        return len(events_from_ics(raw, days_ahead=365, max_results=1000)), ""
+    except Exception:
+        return 0, f"The link at {host} is not a calendar (iCal) file."
+
+
+def check_feed(url: str, timeout: int = 20) -> str:
+    """"" if the feed downloads and parses, else what went wrong."""
+    return inspect_feed(url, timeout)[1]
+
+
 _PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Calendar Setup</title><style>
@@ -157,7 +190,8 @@ class _Handler(BaseHTTPRequestHandler):
         if urlsplit(self.path).path != "/":
             self._send("<h1>Not found</h1>", 404)
             return
-        self._page()
+        notice = self.server.notice
+        self._page(f'<div class="msg err">{escape(notice)}</div>' if notice else "")
 
     def do_POST(self) -> None:
         try:
@@ -201,10 +235,9 @@ class _Handler(BaseHTTPRequestHandler):
         feeds, results, failures = [], [], []
         for url in urls:
             host = urlsplit(url).netloc
-            try:
-                count = probe_feed(url)
-            except Exception:
-                failures.append(f"Could not read the feed at {host}.")
+            count, problem = inspect_feed(url)
+            if problem:
+                failures.append(problem)
                 continue
             feeds.append({"url": url})
             results.append(f"<li>{escape(host)} — {count} event(s) found</li>")
@@ -229,8 +262,10 @@ class FeedSetupServer:
     """Serves the setup form until feeds are saved or the window closes."""
 
     def __init__(self, feeds_path, port: int = DEFAULT_PORT,
-                 pin: str | None = None, timeout: int = DEFAULT_TIMEOUT) -> None:
+                 pin: str | None = None, timeout: int = DEFAULT_TIMEOUT,
+                 notice: str = "") -> None:
         self.feeds_path = Path(feeds_path)
+        self.notice = notice  # shown on the form, e.g. why setup reopened
         self.port = port
         self.pin = pin or generate_pin()
         self.timeout = timeout
@@ -245,6 +280,7 @@ class FeedSetupServer:
         httpd = ThreadingHTTPServer(("0.0.0.0", self.port), _Handler)
         httpd.pin = self.pin
         httpd.feeds_path = self.feeds_path
+        httpd.notice = self.notice
         httpd.configured = False
         httpd.timeout = 1
 

@@ -45,7 +45,8 @@ Push = Callable[..., None]
 
 
 def run(nm: NetworkManager, server_factory: Callable[[list], WifiSetupServer],
-        push: Push, *, force: bool = False, boot_wait: float = BOOT_WAIT,
+        push: Push, *, stash_feeds: Callable[[list[str]], None] = lambda links: None,
+        force: bool = False, boot_wait: float = BOOT_WAIT,
         retry_interval: float = RETRY_INTERVAL, retry_wait: float = RETRY_WAIT,
         idle_grace: float = IDLE_GRACE, clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep) -> str:
@@ -68,7 +69,7 @@ def run(nm: NetworkManager, server_factory: Callable[[list], WifiSetupServer],
 
             creds = server.take_pending()
             if creds:
-                ssid, password = creds
+                ssid, password, feeds = creds
                 sleep(_FLUSH_DELAY)
                 nm.stop_hotspot()
                 try:
@@ -83,6 +84,9 @@ def run(nm: NetworkManager, server_factory: Callable[[list], WifiSetupServer],
                     next_retry = clock() + retry_interval
                     continue
                 log.info("Joined %r.", ssid)
+                if feeds:
+                    # Checked by the calendar setup unit, now that we are online.
+                    stash_feeds(feeds)
                 push("connected", ssid=ssid)
                 return "joined"
 
@@ -145,6 +149,17 @@ def start_units(result: str, units: list[str], run=subprocess.run) -> None:
         run(["systemctl", "start", "--no-block", unit], check=False)
 
 
+def _stash_feeds(links: list[str]) -> None:
+    """Park links from the hotspot form for epd-feed-setup.service to check."""
+    from gcal_epd.config import PROJECT_ROOT, feeds_file, load_config
+    from gcal_epd.infrastructure.feeds_file import pending_feeds_path, write_pending_feeds
+
+    path = pending_feeds_path(feeds_file(load_config()))
+    # This runs as root; the calendar units run as the checkout's owner.
+    write_pending_feeds(path, links, owner_of=PROJECT_ROOT)
+    log.info("Parked %d calendar link(s) for checking.", len(links))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Set up Wi-Fi through a hotspot")
     parser.add_argument("--display", action="store_true",
@@ -164,7 +179,7 @@ def main() -> None:
 
     result = run(NetworkManager(),
                  lambda networks: WifiSetupServer(networks, port=args.port),
-                 _make_push(args.display), force=args.force)
+                 _make_push(args.display), stash_feeds=_stash_feeds, force=args.force)
 
     start_units(result, args.start_unit)
     if result == "cancelled":

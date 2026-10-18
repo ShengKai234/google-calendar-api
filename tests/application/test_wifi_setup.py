@@ -99,6 +99,7 @@ def _run(nm, submissions, **kw):
     clock = Clock()
     screens = []
     holder = {}
+    kw.setdefault("stash_feeds", lambda links: None)
 
     def factory(networks):
         holder["server"] = FakeServer(submissions, clock)
@@ -119,20 +120,20 @@ def test_already_online_skips_the_hotspot():
 
 def test_force_starts_hotspot_even_when_online():
     nm = FakeNM(online_at_boot=True)
-    result, _, _ = _run(nm, [("Home", "correct-horse")], force=True)
+    result, _, _ = _run(nm, [("Home", "correct-horse", [])], force=True)
     assert result == "joined"
     assert "start_hotspot" in nm.log
 
 
 def test_scans_before_taking_the_radio():
     nm = FakeNM()
-    _run(nm, [("Home", "correct-horse")])
+    _run(nm, [("Home", "correct-horse", [])])
     assert nm.log.index("scan") < nm.log.index("start_hotspot")
 
 
 def test_successful_join_shows_connected_and_cleans_up():
     nm = FakeNM()
-    result, screens, server = _run(nm, [None, ("Home", "correct-horse")])
+    result, screens, server = _run(nm, [None, ("Home", "correct-horse", [])])
     assert result == "joined"
     assert [k for k, _ in screens] == ["ap", "connected"]
     assert nm.log.index("stop_hotspot") < nm.log.index(("connect", "Home"))
@@ -142,7 +143,7 @@ def test_successful_join_shows_connected_and_cleans_up():
 
 def test_wrong_password_brings_the_same_hotspot_back():
     nm = FakeNM(connect_ok=False)
-    result, screens, server = _run(nm, [("Home", "wrong-pass"), ("Home", "right-pass")])
+    result, screens, server = _run(nm, [("Home", "wrong-pass", []), ("Home", "right-pass", [])])
     assert result == "joined"
     assert "resume_hotspot" in nm.log
     assert [k for k, _ in screens] == ["ap", "ap", "connected"]
@@ -206,3 +207,20 @@ def test_start_units_not_when_cancelled():
     calls = []
     wifi_setup.start_units("cancelled", UNITS, run=lambda cmd, check: calls.append(cmd))
     assert calls == []
+
+
+# --- calendar links from the hotspot form ---
+
+def test_links_are_parked_only_after_joining():
+    nm = FakeNM(connect_ok=False)  # first attempt fails, second joins
+    stashed = []
+    _run(nm, [("Home", "wrong-pass", ["https://h/a.ics"]),
+              ("Home", "right-pass", ["https://h/b.ics"])],
+         stash_feeds=stashed.append)
+    assert stashed == [["https://h/b.ics"]]
+
+
+def test_no_links_nothing_parked():
+    stashed = []
+    _run(FakeNM(), [("Home", "correct-horse", [])], stash_feeds=stashed.append)
+    assert stashed == []

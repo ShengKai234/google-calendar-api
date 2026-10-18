@@ -1,17 +1,21 @@
-# Template — deploy/install.sh fills in @PROJECT_DIR@, @USER@ and @FEEDS_FILE@.
+# Template — deploy/install.sh fills in @PROJECT_DIR@, @USER@, @FEEDS_FILE@ and @PENDING_FILE@.
 # Install with that script; a copy made by hand will not start.
 [Unit]
 Description=e-Paper calendar setup form (first run, no feeds yet)
 After=network-online.target
 Wants=network-online.target
-# Only until calendars are set up; gcal-epd.service has the opposite condition.
-ConditionPathExists=!@FEEDS_FILE@
+# Runs when calendars are not set up yet, OR when the Wi-Fi hotspot form
+# parked links to check ("|" makes these two conditions an OR).
+# gcal-epd.service has the opposite conditions, so exactly one runs.
+ConditionPathExists=|!@FEEDS_FILE@
+ConditionPathExists=|@PENDING_FILE@
 
 [Service]
 Type=oneshot
 User=@USER@
 WorkingDirectory=@PROJECT_DIR@
-# With no feeds, main serves the setup form (10 min window), then renders.
+# Checks parked links first; with no working feeds it serves the setup
+# form (10 min window), showing why on the panel, then renders.
 ExecStart=@PROJECT_DIR@/.venv/bin/python -m gcal_epd.main --display
 # Form window (600 s) plus the panel refresh, with margin. gcal-epd.service
 # keeps its short timeout because it never waits on a person.

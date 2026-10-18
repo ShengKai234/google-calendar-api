@@ -27,8 +27,12 @@ RUN_USER="$(stat -c %U "$PROJECT_DIR")"
 # Ask the app itself, so the units and config.toml's feeds_file never disagree.
 FEEDS_FILE="$(cd "$PROJECT_DIR" && "$PYTHON" -c \
     'from gcal_epd.config import feeds_file, load_config; print(feeds_file(load_config()))')"
+PENDING_FILE="$(cd "$PROJECT_DIR" && "$PYTHON" -c \
+    'from gcal_epd.config import feeds_file, load_config
+from gcal_epd.infrastructure.feeds_file import pending_feeds_path
+print(pending_feeds_path(feeds_file(load_config())))')"
 
-for value in "$PROJECT_DIR" "$FEEDS_FILE"; do
+for value in "$PROJECT_DIR" "$FEEDS_FILE" "$PENDING_FILE"; do
     case "$value" in
         *[[:space:]]*|*"|"*)
             echo "Error: '$value' contains a space or '|'; systemd units cannot use it as is."
@@ -39,6 +43,7 @@ done
 echo "      Project : $PROJECT_DIR"
 echo "      User    : $RUN_USER"
 echo "      Feeds   : $FEEDS_FILE"
+echo "      Pending : $PENDING_FILE"
 
 install_unit() {
     local name="$1"
@@ -48,6 +53,7 @@ install_unit() {
                     -e "s|@PROJECT_DIR@|$PROJECT_DIR|g" \
                     -e "s|@USER@|$RUN_USER|g" \
                     -e "s|@FEEDS_FILE@|$FEEDS_FILE|g" \
+                    -e "s|@PENDING_FILE@|$PENDING_FILE|g" \
                     "$PROJECT_DIR/deploy/$name")"
     if grep -q "@[A-Z_]*@" <<< "$rendered"; then
         echo "Error: deploy/$name has a placeholder this script does not fill."
