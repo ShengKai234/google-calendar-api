@@ -217,8 +217,11 @@ bash deploy/install.sh
 
 ```bash
 sudo systemd-run --working-directory=$PWD \
-    $PWD/.venv/bin/python -m gcal_epd.wifi_setup --display --force
+    $PWD/.venv/bin/python -m gcal_epd.wifi_setup --display --force \
+    --start-unit gcal-epd.service --start-unit epd-feed-setup.service
 ```
+
+`--start-unit` 讓 Wi‑Fi 設定完成後接著交給日曆，跟開機時一樣。少了它，表單上填的日曆網址會一直沒被檢查，還會擋住定時更新，直到下次重開機。
 
 ---
 

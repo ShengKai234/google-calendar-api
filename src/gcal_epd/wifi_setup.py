@@ -10,13 +10,17 @@ While waiting it periodically drops the hotspot to retry saved networks,
 so a router that was simply slower to boot than the Pi does not leave the
 display stuck in setup — but never while someone is using the form.
 
-    sudo .venv/bin/python -m gcal_epd.wifi_setup --display          # as at boot
+    sudo .venv/bin/python -m gcal_epd.wifi_setup --display   # one try, no hand-over
 
 To change networks over SSH, run it detached — the SSH session drops with
 the Wi-Fi and would take a foreground process down with it:
 
     sudo systemd-run --working-directory=$PWD \\
-        $PWD/.venv/bin/python -m gcal_epd.wifi_setup --display --force
+        $PWD/.venv/bin/python -m gcal_epd.wifi_setup --display --force \\
+        --start-unit gcal-epd.service --start-unit epd-feed-setup.service
+
+Keep the --start-unit options: links entered on the form are parked for
+epd-feed-setup to check, and until it runs gcal-epd stands down.
 """
 import argparse
 import logging

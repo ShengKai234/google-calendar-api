@@ -261,8 +261,13 @@ along with the Wi-Fi and would take a foreground run with it:
 
 ```bash
 sudo systemd-run --working-directory=$PWD \
-    $PWD/.venv/bin/python -m gcal_epd.wifi_setup --display --force
+    $PWD/.venv/bin/python -m gcal_epd.wifi_setup --display --force \
+    --start-unit gcal-epd.service --start-unit epd-feed-setup.service
 ```
+
+The `--start-unit` options hand over to the calendar afterwards, as at boot.
+Without them, links entered on the form would wait unchecked — and hold back
+the scheduled refresh — until the next reboot.
 
 ---
 

@@ -40,3 +40,17 @@ def test_panel_units_are_ordered():
     feed = (DEPLOY / "epd-feed-setup.service").read_text()
     assert re.search(r"^Before=.*gcal-epd\.service.*epd-feed-setup\.service", wifi, re.M)
     assert re.search(r"^Before=gcal-epd\.service", feed, re.M)
+
+
+def test_documented_manual_wifi_setup_hands_over_like_boot():
+    """Without --start-unit, parked links stay unchecked and block the refresh."""
+    root = DEPLOY.parent
+    boot = (DEPLOY / "epd-wifi-setup.service").read_text()
+    for unit in ("gcal-epd.service", "epd-feed-setup.service"):
+        assert f"--start-unit {unit}" in boot
+    for doc in ("README.md", "README.zh-TW.md", "deploy/install.sh",
+                "src/gcal_epd/wifi_setup.py"):
+        text = (root / doc).read_text()
+        assert "--force" in text, doc
+        for unit in ("gcal-epd.service", "epd-feed-setup.service"):
+            assert f"--start-unit {unit}" in text, f"{doc} misses {unit}"
