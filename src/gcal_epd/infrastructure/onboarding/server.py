@@ -14,11 +14,14 @@ import re
 import secrets
 import socket
 import time
+from dataclasses import dataclass
 from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Callable
 from urllib.parse import parse_qs, urlsplit
 
+from gcal_epd.domain.power_schedule import PowerSchedule, format_slot, parse_slot
 from gcal_epd.infrastructure.feeds_file import write_feeds_file
 
 log = logging.getLogger(__name__)
@@ -112,6 +115,85 @@ def check_feed(url: str, timeout: int = 20) -> str:
     return inspect_feed(url, timeout)[1]
 
 
+# --- wake-up times, shared by this form and the Wi-Fi hotspot form ----------
+
+SaveSchedule = Callable[[PowerSchedule], None]
+
+_SCHEDULE_HTML = """<fieldset class="wake"><legend>Display wake-up times</legend>
+<input type="hidden" name="schedule" value="1">
+<div class="slots">{inputs}</div>
+<label class="check"><input type="checkbox" name="enabled" value="1"{checked}>
+Turn off between updates to save battery</label>
+<small>The display wakes a few minutes before each time to refresh the
+calendar, and is off in between.</small></fieldset>"""
+
+
+@dataclass
+class ScheduleFields:
+    """The wake-up section of a form: the times as typed, and the checkbox.
+
+    Every time input shares the field name "slot", and any number of them
+    is accepted (blanks ignored), so adding an "Add time" button later is
+    a page-only change. The hidden "schedule" field marks a form that has
+    the section: without it, an unticked checkbox and a missing section
+    would look the same.
+    """
+    slots: list[str]
+    enabled: bool
+
+    @classmethod
+    def of(cls, schedule: PowerSchedule) -> "ScheduleFields":
+        return cls([format_slot(s) for s in schedule.slots], schedule.enabled)
+
+    @classmethod
+    def from_form(cls, form: dict[str, list[str]]) -> "ScheduleFields | None":
+        """The section as submitted, or None if the form had none."""
+        if "schedule" not in form:
+            return None
+        return cls([s.strip() for s in form.get("slot", [])], "enabled" in form)
+
+    def to_schedule(self, current: PowerSchedule) -> PowerSchedule:
+        """Raise ValueError, with a message for the form, if the times are wrong.
+
+        The wake-up lead is not on the form, so it is kept from `current`.
+        """
+        return PowerSchedule(slots=tuple(parse_slot(s) for s in self.slots if s),
+                             enabled=self.enabled,
+                             wake_lead_minutes=current.wake_lead_minutes)
+
+    def html(self) -> str:
+        slots = self.slots or [""]  # always somewhere to type a time
+        inputs = "".join(
+            f'<input type="time" name="slot" aria-label="Wake-up time {i}"'
+            f' value="{escape(s)}">' for i, s in enumerate(slots, 1))
+        return _SCHEDULE_HTML.format(inputs=inputs,
+                                     checked=" checked" if self.enabled else "")
+
+
+# Rules for the section above, for the <style> of a page that shows it.
+SCHEDULE_CSS = """fieldset.wake{border:1px solid #8888;border-radius:8px;margin:1.5rem 0 0;
+padding:.4rem 1rem 1rem}
+legend{font-weight:600;padding:0 .3rem}
+.slots{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.3rem}
+.slots input{flex:1 1 7rem;width:auto}
+label.check{display:flex;gap:.5rem;align-items:center;font-weight:400}
+label.check input{width:auto;margin:0}"""
+
+
+def save_schedule_safely(save: SaveSchedule, schedule: PowerSchedule) -> bool:
+    """Save the times; a failure is logged, never fatal to the rest of setup."""
+    try:
+        save(schedule)
+    except Exception as e:  # a full disk, a broken config.toml
+
+        log.warning("Could not save the wake-up times: %s", e)
+        return False
+    log.info("Saved wake-up times %s (%s).",
+             ", ".join(format_slot(s) for s in schedule.slots),
+             "power off between" if schedule.enabled else "always on")
+    return True
+
+
 _PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Calendar Setup</title><style>
@@ -133,6 +215,7 @@ border:0;border-radius:8px;background:#2563eb;color:#fff}}
 .ok{{background:#dcfce7;color:#166534}}
 @media(prefers-color-scheme:dark){{.err{{background:#7f1d1d;color:#fecaca}}
 .ok{{background:#14532d;color:#bbf7d0}}}}
+{schedule_css}
 </style></head><body>
 <h1>Calendar Setup</h1>
 <p class="sub">Paste your calendar feed links below.</p>
@@ -147,6 +230,7 @@ border:0;border-radius:8px;background:#2563eb;color:#fff}}
 https://calendar.google.com/calendar/ical/.../basic.ics">{urls_value}</textarea>
 <small>Apple: Calendar &rsaquo; right-click calendar &rsaquo; Share &rsaquo; Public Calendar.
 Google: Settings &rsaquo; calendar &rsaquo; Integrate calendar &rsaquo; secret iCal address.</small>
+{schedule}
 <button type="submit">Save and show my calendar</button>
 </form></body></html>"""
 
@@ -158,6 +242,7 @@ max-width:34rem;margin-inline:auto;text-align:center}}
 h1{{font-size:1.4rem}} ul{{text-align:left;display:inline-block}}
 </style></head><body><h1>Connected</h1>
 <p>{summary}</p><ul>{items}</ul>
+<p>{schedule}</p>
 <p>You can close this page — the display is updating now.</p>
 </body></html>"""
 
@@ -181,9 +266,11 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def _page(self, message: str = "", pin: str = "", urls: str = "",
-              status: int = 200) -> None:
+              times: ScheduleFields | None = None, status: int = 200) -> None:
+        times = times or ScheduleFields.of(self.server.schedule)
         self._send(_PAGE.format(message=message, pin_value=escape(pin),
-                                urls_value=escape(urls)), status)
+                                urls_value=escape(urls), schedule=times.html(),
+                                schedule_css=SCHEDULE_CSS), status)
 
     # --- routes -----------------------------------------------------
     def do_GET(self) -> None:
@@ -203,31 +290,39 @@ class _Handler(BaseHTTPRequestHandler):
                        status=400)
             return
 
-        form = parse_qs(self.rfile.read(length).decode("utf-8", "replace"))
+        # Blank values kept, so a cleared time input comes back as a box to fill.
+        form = parse_qs(self.rfile.read(length).decode("utf-8", "replace"),
+                        keep_blank_values=True)
         pin = (form.get("pin") or [""])[0].strip()
         raw_urls = (form.get("urls") or [""])[0]
+        times = ScheduleFields.from_form(form)
 
         if not secrets.compare_digest(pin, self.server.pin):
             log.warning("Onboarding: rejected a submission with a wrong PIN.")
             self._page('<div class="msg err">That PIN does not match the '
                        'display. Check the screen and try again.</div>',
-                       urls=raw_urls, status=403)
+                       urls=raw_urls, times=times, status=403)
             return
 
-        urls, errors = [], []
+        urls, errors = [], []  # errors are HTML, escaped as they are added
         for line in raw_urls.splitlines():
             if not line.strip():
                 continue
             try:
                 urls.append(validate_feed_url(line))
             except ValueError as e:
-                errors.append(f"{escape(line.strip()[:40])}… — {e}")
+                errors.append(f"{escape(line.strip()[:40])}… — {escape(str(e))}")
         if not urls:
             errors.append("No feed URLs given.")
+        schedule = None
+        if times is not None:
+            try:
+                schedule = times.to_schedule(self.server.schedule)
+            except ValueError as e:
+                errors.append(f"Wake-up times: {escape(str(e))}.")
         if errors:
-            self._page('<div class="msg err">' +
-                       "<br>".join(escape(e) if "—" not in e else e for e in errors) +
-                       "</div>", pin=pin, urls=raw_urls, status=400)
+            self._page('<div class="msg err">' + "<br>".join(errors) + "</div>",
+                       pin=pin, urls=raw_urls, times=times, status=400)
             return
 
         # Probe before saving, so a bad URL fails here rather than showing
@@ -246,15 +341,23 @@ class _Handler(BaseHTTPRequestHandler):
             self._page('<div class="msg err">' +
                        "<br>".join(escape(f) for f in failures) +
                        " Check the link and try again.</div>",
-                       pin=pin, urls=raw_urls, status=400)
+                       pin=pin, urls=raw_urls, times=times, status=400)
             return
 
         write_feeds_file(self.server.feeds_path, feeds)
         log.info("Onboarding: saved %d feed(s) to %s",
                  len(feeds), self.server.feeds_path.name)
+        wake_note = ""
+        if schedule is not None:
+            if save_schedule_safely(self.server.save_schedule, schedule):
+                self.server.schedule = schedule
+                wake_note = "Wake-up times: " + ", ".join(
+                    format_slot(s) for s in schedule.slots) + "."
+            else:
+                wake_note = "The wake-up times could not be saved."
         self._send(_DONE.format(
             summary=f"Saved {len(feeds)} calendar feed(s).",
-            items="".join(results)))
+            items="".join(results), schedule=escape(wake_note)))
         self.server.configured = True
 
 
@@ -263,9 +366,14 @@ class FeedSetupServer:
 
     def __init__(self, feeds_path, port: int = DEFAULT_PORT,
                  pin: str | None = None, timeout: int = DEFAULT_TIMEOUT,
-                 notice: str = "") -> None:
+                 notice: str = "", schedule: PowerSchedule | None = None,
+                 save_schedule: SaveSchedule = lambda schedule: None) -> None:
         self.feeds_path = Path(feeds_path)
         self.notice = notice  # shown on the form, e.g. why setup reopened
+        # The wake-up times the form starts from, and where a new set goes;
+        # the caller knows the file, the server only the function.
+        self.schedule = schedule or PowerSchedule()
+        self.save_schedule = save_schedule
         self.port = port
         self.pin = pin or generate_pin()
         self.timeout = timeout
@@ -281,6 +389,8 @@ class FeedSetupServer:
         httpd.pin = self.pin
         httpd.feeds_path = self.feeds_path
         httpd.notice = self.notice
+        httpd.schedule = self.schedule
+        httpd.save_schedule = self.save_schedule
         httpd.configured = False
         httpd.timeout = 1
 

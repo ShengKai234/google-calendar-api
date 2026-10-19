@@ -11,23 +11,28 @@ class FakeServer:
     url = "http://192.168.0.5:8080"
     pin = "123456"
 
-    def __init__(self, feeds_path, saves=True, notice=""):
+    def __init__(self, feeds_path, saves=True, notice="", schedule=None,
+                 save_schedule=None):
         self.feeds_path = feeds_path
         self.saves = saves
         self.notice = notice
+        self.schedule = schedule
+        self.save_schedule = save_schedule
 
     def serve_until_configured(self):
         return self.saves
 
 
-def _run(monkeypatch, saves, push_display=True, error=""):
+def _run(monkeypatch, saves, push_display=True, error="", schedule_path=None):
     screens, servers = [], []
 
-    def make(path, notice=""):
-        servers.append(FakeServer(path, saves, notice))
+    def make(path, **kwargs):
+        servers.append(FakeServer(path, saves, **kwargs))
         return servers[-1]
 
     monkeypatch.setattr(setup_service, "FeedSetupServer", make)
+    if schedule_path is not None:
+        monkeypatch.setattr(setup_service, "schedule_file", lambda config: schedule_path)
     monkeypatch.setattr(setup_service, "push_setup_screen",
                         lambda config, url, pin, error="": screens.append((url, pin, error)))
     saved = setup_service.run_onboarding({}, push_display=push_display, error=error)
@@ -94,3 +99,37 @@ def test_apply_pending_unreadable_file(tmp_path):
     pending.write_text("not toml [[[")
     assert "No calendar links" in apply_pending_feeds(pending, tmp_path / "f.toml")
     assert not pending.exists()
+
+
+# --- wake-up times ---
+
+def test_form_starts_from_the_saved_schedule(monkeypatch, tmp_path):
+    from datetime import time
+    from gcal_epd.domain.power_schedule import PowerSchedule
+    from gcal_epd.infrastructure.schedule_file import write_schedule
+
+    path = tmp_path / "power_schedule.toml"
+    write_schedule(path, PowerSchedule(slots=(time(6, 30), time(12, 0), time(21, 0)),
+                                       enabled=False, wake_lead_minutes=7))
+    _run(monkeypatch, saves=True, schedule_path=path)
+    assert _run.server.schedule == PowerSchedule(
+        slots=(time(6, 30), time(12, 0), time(21, 0)), enabled=False, wake_lead_minutes=7)
+
+
+def test_form_starts_from_the_default_without_a_file(monkeypatch, tmp_path):
+    from gcal_epd.domain.power_schedule import PowerSchedule
+
+    _run(monkeypatch, saves=True, schedule_path=tmp_path / "power_schedule.toml")
+    assert _run.server.schedule == PowerSchedule()
+
+
+def test_form_saves_to_the_configured_file(monkeypatch, tmp_path):
+    from datetime import time
+    from gcal_epd.domain.power_schedule import PowerSchedule
+    from gcal_epd.infrastructure.schedule_file import read_schedule
+
+    path = tmp_path / "power_schedule.toml"
+    _run(monkeypatch, saves=True, schedule_path=path)
+    chosen = PowerSchedule(slots=(time(8, 0), time(20, 0)))
+    _run.server.save_schedule(chosen)
+    assert read_schedule(path) == chosen
