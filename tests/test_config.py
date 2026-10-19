@@ -59,3 +59,9 @@ def test_importing_entry_points_leaves_logging_alone():
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
                          env={"PYTHONPATH": str(src)}, check=True).stdout.strip()
     assert out == "0"
+
+
+def test_wifi_setup_never_refers_to_main():
+    """Covers every path, including _stash_feeds, which once imported main."""
+    src = Path(__file__).parent.parent / "src" / "gcal_epd" / "wifi_setup.py"
+    assert "gcal_epd.main" not in src.read_text()

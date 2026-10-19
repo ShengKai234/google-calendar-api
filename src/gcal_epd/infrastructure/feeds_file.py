@@ -7,6 +7,7 @@ and deleting the file all sit in this one module so its format has a single
 owner; the setup form writes it, the calendar refresh reads it.
 """
 import logging
+import os
 import tomllib
 from pathlib import Path
 
@@ -22,9 +23,10 @@ def load_feeds(path: Path) -> list[dict]:
         with open(path, "rb") as f:
             return tomllib.load(f).get("feed", [])
     except FileNotFoundError:
-        log.error(
-            "Calendar feed file not found: %s\n"
-            "Copy %s to %s and fill in your feed URLs.",
+        # Normal on a new display: setup has simply not run yet.
+        log.info(
+            "No calendar feeds yet (%s does not exist). Add them with "
+            "--setup, or copy %s to %s.",
             path.name, EXAMPLE_FILE, path.name,
         )
         return []
@@ -74,3 +76,25 @@ def reset_feeds(path: Path) -> bool:
     path.unlink()
     log.info("Removed %s. Calendar feeds are no longer configured.", path.name)
     return True
+
+
+# --- links parked by the Wi-Fi hotspot form ----------------------------
+# The hotspot has no internet, so links typed there cannot be checked on the
+# spot. They wait in a pending file beside the feeds file, in the same
+# format, until the calendar setup checks them once the Pi is online.
+
+def pending_feeds_path(feeds_path: Path) -> Path:
+    path = Path(feeds_path)
+    return path.with_name(path.stem + ".pending" + path.suffix)
+
+
+def write_pending_feeds(path: Path, urls: list[str], owner_of=None, chown=os.chown) -> None:
+    """Park unchecked feed links, owner-only.
+
+    Written by the Wi-Fi setup, which runs as root; `owner_of` (the
+    checkout) hands the file to the user the calendar runs as.
+    """
+    write_feeds_file(path, [{"url": u} for u in urls])
+    if owner_of is not None:
+        st = Path(owner_of).stat()
+        chown(path, st.st_uid, st.st_gid)

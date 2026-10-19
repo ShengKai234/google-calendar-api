@@ -12,7 +12,6 @@ from gcal_epd.render.draw import (
     _CONDITION_ICON,
     render,
     render_setup,
-    render_setup_success,
 )
 from gcal_epd.render.layout import BG, HEIGHT, PALETTE, WIDTH, TW_TZ
 
@@ -179,6 +178,12 @@ def test_render_setup_long_url_is_truncated(tmp_path):
     assert img.size == (WIDTH, HEIGHT)
 
 
-def test_render_setup_success_returns_image(tmp_path):
-    img = render_setup_success(output_path=str(tmp_path / "ok.png"))
-    assert img.size == (WIDTH, HEIGHT)
+def test_render_setup_error_is_drawn_in_red(tmp_path):
+    def colors(img):
+        return {c for _, c in img.getcolors(maxcolors=WIDTH * HEIGHT)}
+
+    plain = render_setup("http://192.168.0.5:8080", pin="123456")
+    failed = render_setup("http://192.168.0.5:8080", pin="123456",
+                          error="The link at h.example is not a calendar (iCal) file.")
+    assert PALETTE["red"] not in colors(plain)
+    assert PALETTE["red"] in colors(failed)

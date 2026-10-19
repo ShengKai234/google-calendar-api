@@ -6,7 +6,7 @@ import pytest
 
 DEPLOY = Path(__file__).parent.parent.parent / "deploy"
 UNITS = sorted(DEPLOY.glob("*.service")) + sorted(DEPLOY.glob("*.timer"))
-FILLED_BY_INSTALL = {"PROJECT_DIR", "USER", "FEEDS_FILE"}
+FILLED_BY_INSTALL = {"PROJECT_DIR", "USER", "FEEDS_FILE", "PENDING_FILE"}
 
 
 @pytest.mark.parametrize("unit", UNITS, ids=lambda p: p.name)
@@ -32,3 +32,25 @@ def test_install_installs_every_unit():
     for unit in UNITS:
         stem = unit.name.replace("gcal-epd", "$SERVICE_NAME")
         assert unit.name in script or stem in script, unit.name
+
+
+def test_panel_units_are_ordered():
+    """Two processes driving the panel at once fail with 'GPIO busy'."""
+    wifi = (DEPLOY / "epd-wifi-setup.service").read_text()
+    feed = (DEPLOY / "epd-feed-setup.service").read_text()
+    assert re.search(r"^Before=.*gcal-epd\.service.*epd-feed-setup\.service", wifi, re.M)
+    assert re.search(r"^Before=gcal-epd\.service", feed, re.M)
+
+
+def test_documented_manual_wifi_setup_hands_over_like_boot():
+    """Without --start-unit, parked links stay unchecked and block the refresh."""
+    root = DEPLOY.parent
+    boot = (DEPLOY / "epd-wifi-setup.service").read_text()
+    for unit in ("gcal-epd.service", "epd-feed-setup.service"):
+        assert f"--start-unit {unit}" in boot
+    for doc in ("README.md", "README.zh-TW.md", "deploy/install.sh",
+                "src/gcal_epd/wifi_setup.py"):
+        text = (root / doc).read_text()
+        assert "--force" in text, doc
+        for unit in ("gcal-epd.service", "epd-feed-setup.service"):
+            assert f"--start-unit {unit}" in text, f"{doc} misses {unit}"

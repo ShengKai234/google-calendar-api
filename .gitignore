@@ -173,3 +173,4 @@ service_account.json
 
 # Calendar feed URLs (contain private tokens)
 ics_feeds.toml
+ics_feeds.pending.toml

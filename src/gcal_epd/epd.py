@@ -24,7 +24,7 @@ def push_to_display(img: Image.Image) -> None:
     log.info("Initializing display...")
     epd.init()
 
-    log.info("Sending image — full refresh takes ~36 seconds...")
+    log.info("Sending image — a full refresh takes about 15–30 seconds...")
     epd.display(epd.getbuffer(img))
 
     log.info("Done. Display going to sleep.")

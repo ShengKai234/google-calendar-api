@@ -1,4 +1,4 @@
-# Template — deploy/install.sh fills in @PROJECT_DIR@, @USER@ and @FEEDS_FILE@.
+# Template — deploy/install.sh fills in @PROJECT_DIR@, @USER@, @FEEDS_FILE@ and @PENDING_FILE@.
 # Install with that script; a copy made by hand will not start.
 [Unit]
 Description=e-Paper Wi-Fi setup (hotspot when no network)

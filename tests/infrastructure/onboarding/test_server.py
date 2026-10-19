@@ -14,6 +14,7 @@ import pytest
 
 from gcal_epd.infrastructure.onboarding.server import (
     FeedSetupServer,
+    check_feed,
     detect_lan_ip,
     generate_pin,
     probe_feed,
@@ -232,3 +233,65 @@ def test_setup_url_is_http_on_the_lan(setup_server):
     setup_server.ip = "192.168.0.5"
     setup_server.port = 8080
     assert setup_server.url == "http://192.168.0.5:8080"
+
+
+# --- checking a feed, with a reason the user can act on ---
+
+@pytest.fixture
+def bad_feeds():
+    """/404 answers 404; /html answers a web page instead of a calendar."""
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def do_GET(self):
+            if self.path.endswith("/404"):
+                self.send_response(404); self.end_headers(); return
+            body = b"<html><body>Sign in</body></html>"
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{httpd.server_address[1]}/{SECRET_PATH}"
+    httpd.shutdown()
+
+
+def test_check_feed_ok(feed_server):
+    assert check_feed(feed_server) == ""
+
+
+def test_check_feed_http_error_names_status(bad_feeds):
+    msg = check_feed(bad_feeds + "/404")
+    assert "404" in msg
+
+
+def test_check_feed_not_ical(bad_feeds):
+    assert "not a calendar (iCal) file" in check_feed(bad_feeds + "/html")
+
+
+def test_check_feed_unreachable():
+    assert "Could not download" in check_feed("http://127.0.0.1:9/a.ics", timeout=2)
+
+
+def test_check_feed_never_reveals_the_token(bad_feeds):
+    for path in ("/404", "/html"):
+        assert SECRET_PATH not in check_feed(bad_feeds + path)
+
+
+# --- the form says why setup reopened ---
+
+def test_form_shows_notice(tmp_path):
+    srv = FeedSetupServer(tmp_path / "ics_feeds.toml", port=0, pin="123456", timeout=3,
+                          notice="The link at h.example is not a calendar (iCal) file.")
+    import socket
+    s = socket.socket(); s.bind(("127.0.0.1", 0))
+    srv.port = s.getsockname()[1]; s.close()
+    threading.Thread(target=srv.serve_until_configured, daemon=True).start()
+    for _ in range(50):
+        try:
+            body = urllib.request.urlopen(f"http://127.0.0.1:{srv.port}", timeout=1).read().decode()
+            break
+        except Exception:
+            time.sleep(0.05)
+    assert "not a calendar (iCal) file" in body

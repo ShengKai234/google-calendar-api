@@ -27,8 +27,12 @@ RUN_USER="$(stat -c %U "$PROJECT_DIR")"
 # Ask the app itself, so the units and config.toml's feeds_file never disagree.
 FEEDS_FILE="$(cd "$PROJECT_DIR" && "$PYTHON" -c \
     'from gcal_epd.config import feeds_file, load_config; print(feeds_file(load_config()))')"
+PENDING_FILE="$(cd "$PROJECT_DIR" && "$PYTHON" -c \
+    'from gcal_epd.config import feeds_file, load_config
+from gcal_epd.infrastructure.feeds_file import pending_feeds_path
+print(pending_feeds_path(feeds_file(load_config())))')"
 
-for value in "$PROJECT_DIR" "$FEEDS_FILE"; do
+for value in "$PROJECT_DIR" "$FEEDS_FILE" "$PENDING_FILE"; do
     case "$value" in
         *[[:space:]]*|*"|"*)
             echo "Error: '$value' contains a space or '|'; systemd units cannot use it as is."
@@ -39,6 +43,7 @@ done
 echo "      Project : $PROJECT_DIR"
 echo "      User    : $RUN_USER"
 echo "      Feeds   : $FEEDS_FILE"
+echo "      Pending : $PENDING_FILE"
 
 install_unit() {
     local name="$1"
@@ -48,6 +53,7 @@ install_unit() {
                     -e "s|@PROJECT_DIR@|$PROJECT_DIR|g" \
                     -e "s|@USER@|$RUN_USER|g" \
                     -e "s|@FEEDS_FILE@|$FEEDS_FILE|g" \
+                    -e "s|@PENDING_FILE@|$PENDING_FILE|g" \
                     "$PROJECT_DIR/deploy/$name")"
     if grep -q "@[A-Z_]*@" <<< "$rendered"; then
         echo "Error: deploy/$name has a placeholder this script does not fill."
@@ -103,13 +109,14 @@ systemctl list-timers "$SERVICE_NAME.timer" --no-pager 2>/dev/null | grep "$SERV
 echo ""
 echo "Commands:"
 echo "  Manual run  : .venv/bin/python -m gcal_epd.main --display"
-echo "                (NOT 'systemctl start' — that unit powers the Pi off"
-echo "                 when it finishes, by design for the timer.)"
+echo "                or: sudo systemctl start $SERVICE_NAME.service"
 echo "  View logs   : journalctl -u $SERVICE_NAME.service -n 50"
 echo "  Disable     : sudo systemctl disable $SERVICE_NAME.timer"
 echo "  Change Wi-Fi: sudo systemd-run --working-directory=$PROJECT_DIR \\"
-echo "                  $PROJECT_DIR/.venv/bin/python -m gcal_epd.wifi_setup --display --force"
-echo "                (systemd-run, so it survives the SSH session dropping with the Wi-Fi.)"
+echo "                  $PROJECT_DIR/.venv/bin/python -m gcal_epd.wifi_setup --display --force \\"
+echo "                  --start-unit gcal-epd.service --start-unit epd-feed-setup.service"
+echo "                (systemd-run, so it survives the SSH session dropping with the Wi-Fi;"
+echo "                 --start-unit, so links entered on the form get checked.)"
 echo ""
 echo "Note: Reboot required for watchdog to take effect."
 read -rp "Reboot now? [y/N] " reboot_now

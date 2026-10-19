@@ -376,3 +376,40 @@ section or an arrow added to one language only fails. Checked by mutation:
 an extra arrow and an extra heading in the Chinese file each fail it.
 `README.MD` was renamed `README.md` to pair with `README.zh-TW.md`.
 Tests 253 -> 261.
+
+### 2026-10-18 — One-step setup: calendar links on the hotspot form
+
+Hardware testing of the Wi-Fi flow showed the second QR scan as the weak
+point: after the hotspot closes the phone must find its way back to the
+home network before the calendar form is reachable. A WebSocket or a
+redirect cannot bridge that — the hotspot address is gone and the Pi's
+LAN address is not known in advance — so the links are collected up front.
+
+- The hotspot form gains an optional "Calendar links" box. Only the form
+  is validated there; the hotspot has no internet to fetch a feed.
+- After a successful join the Wi-Fi setup (root) parks them with
+  `feeds_file.write_pending_feeds` in `ics_feeds.pending.toml`, same
+  format, mode 600, chowned to the checkout's owner.
+- `epd-feed-setup.service` now also runs when that file exists (systemd
+  `|` OR-conditions on `@FEEDS_FILE@` / `@PENDING_FILE@`, both filled by
+  `install.sh` from the app), and `gcal-epd.service` stands down while it
+  does. `main` calls `setup_service.apply_pending_feeds` first. All good:
+  they become `ics_feeds.toml` and the calendar renders with no further scan.
+- Any failure reopens calendar setup with the reason on the panel (red)
+  and the form. `onboarding.inspect_feed` tells apart unreachable, an HTTP
+  status, and "not a calendar (iCal) file", naming only the host. The
+  pending file is removed either way, so a bad link is not retried every
+  boot, and working feeds from before are not replaced.
+
+Written before #13/#14 and rebuilt on top of them: the pending helpers sit
+in `feeds_file.py` (format owner) and the check-and-apply step in
+`setup_service.py` (setup flow); nothing imports `main`.
+
+Follow-ups found on hardware, each its own commit on this branch: the
+first-run "feed file not found" is logged at INFO, not ERROR; the refresh
+log states the measured 15–30 s instead of ~36 s; calendar setup no longer
+draws "Connected!" right before the calendar (one refresh fewer);
+`epd-feed-setup` is `Before=gcal-epd.service`, so a timer run waits for
+setup instead of racing it for the panel; and `install.sh` no longer warns
+that `systemctl start` powers the Pi off. README and architecture, in both
+languages, describe the one-step flow. Tests 261 -> 283.

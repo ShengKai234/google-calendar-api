@@ -32,8 +32,8 @@ networks.
 ```mermaid
 flowchart TB
   BOOT(["Boot"]) --> W["epd-wifi-setup<br/>hotspot if there is no network"]
-  W -->|"online"| C{"Calendar links<br/>saved?"}
-  C -->|"no"| F["epd-feed-setup<br/>QR + PIN to add them"]
+  W -->|"online"| C{"Calendar links saved,<br/>none waiting to check?"}
+  C -->|"no"| F["epd-feed-setup<br/>check new links,<br/>or QR + PIN to add them"]
   C -->|"yes"| G["gcal-epd<br/>draw the calendar"]
   T(["Timer · 07:00 / 19:00"]) --> G
 ```
@@ -90,7 +90,14 @@ If none answers, it becomes a hotspot and the panel shows two QR codes:
 1. **Join the hotspot** — `ePaper-Setup-XXXX`, with a fresh random password
    printed beside it for phones that cannot scan a Wi-Fi QR.
 2. **Open the form** — `http://10.42.0.1`. Pick your network, enter the
-   password, Connect.
+   password, and optionally paste your calendar links in the same form.
+   Connect.
+
+Links entered here cannot be checked on the hotspot, which has no
+internet, so they are checked as soon as the Pi is online. If they all
+work, the calendar appears without a second scan. If one fails, the
+calendar setup screen opens instead, with the reason in red, and any
+calendars that worked before are kept.
 
 The hotspot closes while the Pi tries the network. A wrong password brings
 the same hotspot back with the error in red; your phone rejoins it on its
@@ -104,8 +111,9 @@ display — but never within 2 minutes of someone using the form.
 
 ## Calendar feeds
 
-When the Pi is online but has no calendar links, the panel shows a QR code,
-the Pi's address and a 6-digit PIN. Scan, paste your feed links, enter the
+When the Pi is online but has no calendar links — or a link from the Wi-Fi
+form failed — the panel shows a QR code, the Pi's address and a 6-digit PIN,
+plus the reason in red when it reopened after a failure. Scan, paste your feed links, enter the
 PIN. Each link is fetched before it is saved, so a typo fails on the form
 rather than as an empty calendar later. The form stays open 10 minutes.
 
@@ -253,8 +261,13 @@ along with the Wi-Fi and would take a foreground run with it:
 
 ```bash
 sudo systemd-run --working-directory=$PWD \
-    $PWD/.venv/bin/python -m gcal_epd.wifi_setup --display --force
+    $PWD/.venv/bin/python -m gcal_epd.wifi_setup --display --force \
+    --start-unit gcal-epd.service --start-unit epd-feed-setup.service
 ```
+
+The `--start-unit` options hand over to the calendar afterwards, as at boot.
+Without them, links entered on the form would wait unchecked — and hold back
+the scheduled refresh — until the next reboot.
 
 ---
 

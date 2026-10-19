@@ -44,6 +44,8 @@ def _skeleton(diagram: list[str]) -> list[str]:
         line = re.sub(r'"[^"]*"', '""', line).rstrip()
         if re.match(r"\s*participant ", line):
             line = line.split(" as ")[0]
+        elif m := re.match(r"(\s*(?:alt|else|opt|loop|note \w+ of \w+))\b", line):
+            line = m.group(1)  # block keyword stays, its caption is prose
         elif re.search(r"-+>>|-->>", line):  # sequence message: drop its text
             line = line.split(":")[0]
         out.append(line)

@@ -96,14 +96,14 @@ def test_post_records_credentials(server):
                                      "password": "correct-horse"})
     assert status == 200
     assert "Connecting to Home" in body
-    assert server.take_pending() == ("Home", "correct-horse")
+    assert server.take_pending() == ("Home", "correct-horse", [])
     assert server.take_pending() is None
 
 
 def test_post_hidden_network_uses_typed_name(server):
     _request(server, {"ssid": "__other__", "other_ssid": " Secret Net ",
                       "password": "correct-horse"})
-    assert server.take_pending() == ("Secret Net", "correct-horse")
+    assert server.take_pending() == ("Secret Net", "correct-horse", [])
 
 
 def test_post_short_password_is_rejected(server):
@@ -149,4 +149,29 @@ def test_handle_once_returns_early_on_submission(server):
     start = time.monotonic()
     server.handle_once()
     assert time.monotonic() - start < 0.5
-    assert server.take_pending() == ("Home", "correct-horse")
+    assert server.take_pending() == ("Home", "correct-horse", [])
+
+
+# --- calendar links ---
+
+def test_post_with_calendar_links(server):
+    status, body = _request(server, {"ssid": "Home", "password": "correct-horse",
+                                     "feeds": "webcal://h/a.ics\n\n https://h/b.ics "})
+    assert status == 200
+    assert "2 calendar link(s)" in body
+    assert server.take_pending() == ("Home", "correct-horse",
+                                     ["webcal://h/a.ics", "https://h/b.ics"])
+
+
+def test_post_bad_calendar_link_is_rejected_and_kept_for_editing(server):
+    status, body = _request(server, {"ssid": "Home", "password": "correct-horse",
+                                     "feeds": "ftp://h/a.ics"})
+    assert status == 400
+    assert "Calendar link" in body
+    assert "ftp://h/a.ics" in body  # still in the box, to fix
+    assert server.take_pending() is None
+
+
+def test_parse_feed_links_skips_blanks():
+    from gcal_epd.infrastructure.wifi.server import parse_feed_links
+    assert parse_feed_links("\n https://h/a.ics \n\n") == ["https://h/a.ics"]
