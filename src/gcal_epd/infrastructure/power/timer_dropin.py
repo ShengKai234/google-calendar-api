@@ -54,3 +54,16 @@ def write_dropin(schedule: PowerSchedule, tz: ZoneInfo, path: Path = DROPIN) -> 
     tmp.chmod(0o644)
     os.replace(tmp, path)
     return True
+
+
+def apply_schedule(schedule: PowerSchedule, tz: ZoneInfo, system,
+                   path: Path = DROPIN) -> bool:
+    """Point gcal-epd.timer at the schedule's slots; True if that changed it."""
+    if not write_dropin(schedule, tz, path):
+        log.info("%s already follows the schedule.", TIMER_UNIT)
+        return False
+    system.daemon_reload()
+    system.try_restart(TIMER_UNIT)
+    log.info("%s now fires at %s (%s).", TIMER_UNIT,
+             ", ".join(format_slot(s) for s in schedule.slots), tz.key)
+    return True
