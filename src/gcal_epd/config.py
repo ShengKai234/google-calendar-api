@@ -7,9 +7,13 @@ so neither entry point has to import the other just to read a setting, and
 """
 import tomllib
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 DEFAULT_FEEDS_FILE = "ics_feeds.toml"
+DEFAULT_SCHEDULE_FILE = "power_schedule.toml"
+DEFAULT_TIMEZONE = "Asia/Taipei"
+DEFAULT_BOARD = "auto"
 
 
 def load_config(path: str = "config.toml") -> dict:
@@ -36,3 +40,18 @@ def feeds_file(config: dict) -> Path:
         if source.get("type") == "ics":
             return PROJECT_ROOT / source.get("feeds_file", DEFAULT_FEEDS_FILE)
     return PROJECT_ROOT / DEFAULT_FEEDS_FILE
+
+
+def schedule_file(config: dict) -> Path:
+    """The power schedule (wake-up slots), from [power] schedule_file."""
+    return PROJECT_ROOT / config.get("power", {}).get("schedule_file", DEFAULT_SCHEDULE_FILE)
+
+
+def power_timezone(config: dict) -> ZoneInfo:
+    """The timezone the schedule's wall-clock slots are in, from [power] timezone."""
+    return ZoneInfo(config.get("power", {}).get("timezone", DEFAULT_TIMEZONE))
+
+
+def power_board(config: dict) -> str:
+    """Which wake-up board the Pi has, from [power] board."""
+    return config.get("power", {}).get("board", DEFAULT_BOARD)

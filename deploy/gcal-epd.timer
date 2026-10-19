@@ -1,8 +1,12 @@
 [Unit]
-Description=Run Google Calendar e-Paper Display at 07:00 and 19:00
+Description=Run Google Calendar e-Paper Display at the power schedule's times
 
 [Timer]
-# Run at 07:00 and 19:00 Taiwan time (timezone explicit, independent of system timezone)
+# Defaults: 07:00 and 19:00 Taiwan time (timezone explicit, independent of
+# system timezone). The times set on the setup form replace these through
+# a drop-in, gcal-epd.timer.d/power-schedule.conf, written by
+# `python -m gcal_epd.power_manager apply-schedule` (epd-power.service at
+# boot, epd-power-schedule.path when the schedule changes).
 OnCalendar=*-*-* 07:00:00 Asia/Taipei
 OnCalendar=*-*-* 19:00:00 Asia/Taipei
 
