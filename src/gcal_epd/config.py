@@ -15,11 +15,14 @@ Two roots:
 import os
 import tomllib
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 DEFAULT_FEEDS_FILE = "ics_feeds.toml"
 LOCAL_CONFIG = "config.local.toml"
 RELEASE_MARKER = "RELEASE"
+DEFAULT_SCHEDULE_FILE = "power_schedule.toml"
+DEFAULT_TIMEZONE = "Asia/Taipei"
 
 
 def data_dir(root: Path = PROJECT_ROOT, env=os.environ) -> Path:
@@ -96,3 +99,15 @@ def feeds_file(config: dict, data: Path | None = None) -> Path:
         if source.get("type") == "ics":
             return data / source.get("feeds_file", DEFAULT_FEEDS_FILE)
     return data / DEFAULT_FEEDS_FILE
+
+
+def schedule_file(config: dict, data: Path | None = None) -> Path:
+    """The power schedule (wake-up slots), from [power] schedule_file: this
+    display's own file, kept with its data across updates."""
+    data = DATA_DIR if data is None else data
+    return data / config.get("power", {}).get("schedule_file", DEFAULT_SCHEDULE_FILE)
+
+
+def power_timezone(config: dict) -> ZoneInfo:
+    """The timezone the schedule's wall-clock slots are in, from [power] timezone."""
+    return ZoneInfo(config.get("power", {}).get("timezone", DEFAULT_TIMEZONE))
