@@ -23,6 +23,7 @@ LOCAL_CONFIG = "config.local.toml"
 RELEASE_MARKER = "RELEASE"
 DEFAULT_SCHEDULE_FILE = "power_schedule.toml"
 DEFAULT_TIMEZONE = "Asia/Taipei"
+DEFAULT_BOARD = "auto"
 
 
 def data_dir(root: Path = PROJECT_ROOT, env=os.environ) -> Path:
@@ -111,3 +112,8 @@ def schedule_file(config: dict, data: Path | None = None) -> Path:
 def power_timezone(config: dict) -> ZoneInfo:
     """The timezone the schedule's wall-clock slots are in, from [power] timezone."""
     return ZoneInfo(config.get("power", {}).get("timezone", DEFAULT_TIMEZONE))
+
+
+def power_board(config: dict) -> str:
+    """Which wake-up board the Pi has, from [power] board."""
+    return config.get("power", {}).get("board", DEFAULT_BOARD)

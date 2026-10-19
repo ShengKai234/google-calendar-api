@@ -33,6 +33,8 @@ import socket
 from datetime import datetime, timezone
 from typing import Callable
 
+from gcal_epd.domain.power_ports import WakeBoardError
+
 log = logging.getLogger(__name__)
 
 DEFAULT_HOST = "127.0.0.1"
@@ -44,7 +46,7 @@ _DONE = "done"
 Transport = Callable[[str], str]
 
 
-class PiSugarError(RuntimeError):
+class PiSugarError(WakeBoardError):
     """pisugar-server is unreachable, or answered with an error."""
 
 
@@ -200,3 +202,53 @@ class PiSugar:
         got_repeat = self.alarm_repeat()
         if got_repeat != repeat:
             raise PiSugarError(f"alarm repeat reads back as {got_repeat}, not {repeat}")
+
+
+class PiSugar3Board:
+    """The PiSugar 3 as a WakeBoard (domain/power_ports.py).
+
+    Its alarm repeats every day, a safety net: should the next boot fail,
+    the Pi still wakes at the same time tomorrow. Powering off needs no
+    command here: pisugar-poweroff.service, installed with pisugar-server,
+    cuts the output during `systemctl poweroff`.
+    """
+    name = "PiSugar 3"
+
+    def __init__(self, client: PiSugar | None = None, startup_wait: float = 15) -> None:
+        self.client = client or PiSugar()
+        self.startup_wait = startup_wait
+
+    def available(self) -> bool:
+        return self.client.available()
+
+    def arm(self, when: datetime) -> None:
+        self.client.set_alarm_verified(when, EVERY_DAY)
+
+    def rtc_time(self) -> datetime:
+        return self.client.rtc_time()
+
+    def rtc_to_system(self) -> None:
+        self.client.rtc_to_pi()
+
+    def system_to_rtc(self) -> None:
+        self.client.pi_to_rtc()
+
+    def report(self, tz) -> list[tuple[str, str]]:
+        pisugar = self.client
+        lines = []
+
+        def ask(label: str, read: Callable[[], str]) -> None:
+            try:
+                value = read()
+            except PiSugarError as e:
+                value = f"unavailable ({e})"
+            lines.append((label, value))
+
+        ask("Battery", lambda: f"{pisugar.battery():.0f}%")
+        ask("Plugged in", lambda: "yes" if pisugar.power_plugged() else "no")
+        ask("RTC time", lambda: pisugar.rtc_time().astimezone(tz).isoformat())
+        ask("Alarm", lambda: (
+            f"{pisugar.alarm_time().astimezone(tz).strftime('%H:%M')} "
+            f"({'enabled' if pisugar.alarm_enabled() else 'disabled'}, "
+            f"repeat mask {pisugar.alarm_repeat()})"))
+        return lines

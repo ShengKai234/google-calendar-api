@@ -9,9 +9,9 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from gcal_epd import power_manager as pm
 from gcal_epd.domain.power_schedule import PowerSchedule
-from gcal_epd.infrastructure.power.pisugar import PiSugar
+from gcal_epd.infrastructure.power.boards import NullBoard
+from gcal_epd.infrastructure.power.pisugar import PiSugar, PiSugar3Board
 from gcal_epd.infrastructure.power.system import UnitState
 from gcal_epd.power_manager import (
     GRACE,
@@ -26,6 +26,7 @@ from tests.infrastructure.power.fake_pisugar import FakePiSugarServer
 
 TPE = ZoneInfo("Asia/Taipei")
 UTC = timezone.utc
+BOARD_WAIT = 15
 
 
 def at(h, m, s=0, day=19):
@@ -56,7 +57,7 @@ def test_waits_for_a_refresh_that_has_not_finished():
 
 # --- decide: never power off when ... --------------------------------
 @pytest.mark.parametrize("change,words", [
-    ({"pisugar": False}, "no PiSugar"),
+    ({"board": False}, "no wake-up board"),
     ({"schedule": PowerSchedule(enabled=False)}, "turned off"),
     ({"stay_awake": True}, "stay-awake"),
     ({"setup": "epd-wifi-setup.service"}, "setting up"),
@@ -87,8 +88,8 @@ def test_blockers_beat_the_awake_cap(change):
     assert not decide(replace(late, **change)).power_off
 
 
-def test_no_pisugar_is_final():
-    d = decide(snap(pisugar=False))
+def test_no_board_is_final():
+    d = decide(snap(board=False))
     assert not d.power_off and d.final
 
 
@@ -214,7 +215,7 @@ class Rig:
         self.sleeps = []
         self.max_sleeps = 50
         self.manager = PowerManager(
-            PiSugar(self.server), self.system, lambda: self.schedule, TPE,
+            PiSugar3Board(PiSugar(self.server), startup_wait=BOARD_WAIT), self.system, lambda: self.schedule, TPE,
             stay_awake_flag=self.flag, clock=lambda: self.t.astimezone(UTC),
             monotonic=lambda: self.mono, sleep=self.sleep)
 
@@ -232,7 +233,7 @@ def test_snapshot_converts_monotonic_stamps(tmp_path):
     assert s.now == at(6, 59)
     assert s.boot == at(6, 55)
     assert s.last_refresh == at(6, 57, 10)
-    assert s.pisugar and not s.stay_awake and not s.setup and not s.refreshing
+    assert s.board and not s.stay_awake and not s.setup and not s.refreshing
     assert s.ssh_sessions == 0
 
 
@@ -324,9 +325,9 @@ def test_dry_run_neither_sets_the_alarm_nor_powers_off(tmp_path):
 
 def test_run_without_pisugar_does_nothing(tmp_path):
     rig = Rig(tmp_path, up=False)
-    assert rig.manager.run() == "no-pisugar"
+    assert rig.manager.run() == "no-board"
     assert rig.system.poweroffs == 0
-    assert sum(rig.sleeps) >= pm.PISUGAR_WAIT
+    assert sum(rig.sleeps) >= BOARD_WAIT
 
 
 def test_run_waits_for_pisugar_server_to_come_up(tmp_path):
@@ -451,6 +452,15 @@ def test_apply_schedule_reloads_only_on_change(tmp_path):
 def test_no_pisugar_installed_does_not_wait(tmp_path):
     """A Pi without pisugar-server must not hold up Wi-Fi setup at every boot."""
     rig = Rig(tmp_path, up=False)
-    rig.manager._pisugar_wait = 0
-    assert rig.manager.run() == "no-pisugar"
+    rig.manager.board.startup_wait = 0
+    assert rig.manager.run() == "no-board"
     assert rig.sleeps == []
+
+
+def test_no_board_never_powers_off(tmp_path):
+    """board = "none": a mains Pi is managed by nobody and stays on."""
+    rig = Rig(tmp_path)
+    rig.manager.board = NullBoard()
+    assert rig.manager.run() == "no-board"
+    assert rig.system.poweroffs == 0 and rig.sleeps == []
+    assert "not reachable" in "\n".join(rig.manager.status())
