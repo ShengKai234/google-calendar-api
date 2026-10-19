@@ -20,11 +20,13 @@ the Wi-Fi and would take a foreground process down with it:
 """
 import argparse
 import logging
+import signal
 import subprocess
 import sys
 import time
 from typing import Callable
 
+from gcal_epd.infrastructure.wifi.hotspot import DEFAULT_HOTSPOT, HOTSPOTS, make_wifi
 from gcal_epd.infrastructure.wifi.nmcli import NetworkManager, NmcliError
 from gcal_epd.infrastructure.wifi.server import (
     DEFAULT_PORT,
@@ -145,6 +147,12 @@ def start_units(result: str, units: list[str], run=subprocess.run) -> None:
         run(["systemctl", "start", "--no-block", unit], check=False)
 
 
+def _interrupt(signum, frame) -> None:
+    """End on `systemctl stop` (SIGTERM) as on Ctrl-C, so the hotspot is taken
+    down and wlan0 is handed back to NetworkManager."""
+    raise KeyboardInterrupt
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Set up Wi-Fi through a hotspot")
     parser.add_argument("--display", action="store_true",
@@ -154,6 +162,8 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--start-unit", metavar="UNIT", action="append", default=[],
                         help="systemd unit to start once Wi-Fi is up (repeatable)")
+    parser.add_argument("--hotspot", choices=sorted(HOTSPOTS), default=DEFAULT_HOTSPOT,
+                        help="program that runs the setup hotspot (default: %(default)s)")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")  # not at import
 
@@ -162,7 +172,9 @@ def main() -> None:
                   "(Raspberry Pi OS Bookworm or later).")
         sys.exit(1)
 
-    result = run(NetworkManager(),
+    signal.signal(signal.SIGTERM, _interrupt)
+    wifi = make_wifi(NetworkManager(), args.hotspot)
+    result = run(wifi,
                  lambda networks: WifiSetupServer(networks, port=args.port),
                  _make_push(args.display), force=args.force)
 
