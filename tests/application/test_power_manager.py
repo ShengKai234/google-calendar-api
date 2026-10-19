@@ -446,3 +446,11 @@ def test_apply_schedule_reloads_only_on_change(tmp_path):
     assert system.reloads == ["daemon-reload", "gcal-epd.timer"]
     assert apply_schedule(PowerSchedule(slots=(time(8),)), TPE, system, path)
     assert len(system.reloads) == 4
+
+
+def test_no_pisugar_installed_does_not_wait(tmp_path):
+    """A Pi without pisugar-server must not hold up Wi-Fi setup at every boot."""
+    rig = Rig(tmp_path, up=False)
+    rig.manager._pisugar_wait = 0
+    assert rig.manager.run() == "no-pisugar"
+    assert rig.sleeps == []

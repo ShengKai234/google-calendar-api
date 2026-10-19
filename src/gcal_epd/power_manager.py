@@ -25,6 +25,7 @@ boot partition from any computer: an empty file named `epd-stay-awake`.
 """
 import argparse
 import logging
+import shutil
 import sys
 import time
 from dataclasses import dataclass
@@ -147,6 +148,7 @@ class PowerManager:
     def __init__(self, pisugar: PiSugar, system: System,
                  load_schedule: Callable[[], PowerSchedule], tz: ZoneInfo, *,
                  stay_awake_flag: Path = STAY_AWAKE_FLAG,
+                 pisugar_wait: float = PISUGAR_WAIT,
                  clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
                  monotonic: Callable[[], float] = time.monotonic,
                  sleep: Callable[[float], None] = time.sleep) -> None:
@@ -155,6 +157,7 @@ class PowerManager:
         self._load_schedule = load_schedule
         self.tz = tz
         self._flag = stay_awake_flag
+        self._pisugar_wait = pisugar_wait
         self._clock = clock
         self._monotonic = monotonic
         self._sleep = sleep
@@ -203,9 +206,9 @@ class PowerManager:
             last_refresh=last_refresh,
         )
 
-    def wait_for_pisugar(self, timeout: float = PISUGAR_WAIT) -> bool:
+    def wait_for_pisugar(self) -> bool:
         """pisugar-server starts alongside us at boot; give it a moment."""
-        deadline = self._monotonic() + timeout
+        deadline = self._monotonic() + self._pisugar_wait
         while not self.pisugar.available():
             if self._monotonic() >= deadline:
                 return False
@@ -365,7 +368,10 @@ def main(argv: list[str] | None = None) -> int:
     tz = power_timezone(config)
     path = schedule_file(config)
     system = System()
-    manager = PowerManager(PiSugar(), system, lambda: load_schedule(path), tz)
+    # Not installed: do not hold up Wi-Fi setup at every boot waiting for it.
+    wait = PISUGAR_WAIT if shutil.which("pisugar-server") else 0
+    manager = PowerManager(PiSugar(), system, lambda: load_schedule(path), tz,
+                           pisugar_wait=wait)
 
     if args.command == "status":
         print("\n".join(manager.status()))
