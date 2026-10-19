@@ -11,13 +11,11 @@ class FakeServer:
     url = "http://192.168.0.5:8080"
     pin = "123456"
 
-    def __init__(self, feeds_path, saves=True, notice="", schedule=None,
-                 save_schedule=None):
+    def __init__(self, feeds_path, saves=True, notice="", schedule_store=None):
         self.feeds_path = feeds_path
         self.saves = saves
         self.notice = notice
-        self.schedule = schedule
-        self.save_schedule = save_schedule
+        self.schedule_store = schedule_store
 
     def serve_until_configured(self):
         return self.saves
@@ -112,7 +110,7 @@ def test_form_starts_from_the_saved_schedule(monkeypatch, tmp_path):
     write_schedule(path, PowerSchedule(slots=(time(6, 30), time(12, 0), time(21, 0)),
                                        enabled=False, wake_lead_minutes=7))
     _run(monkeypatch, saves=True, schedule_path=path)
-    assert _run.server.schedule == PowerSchedule(
+    assert _run.server.schedule_store.load() == PowerSchedule(
         slots=(time(6, 30), time(12, 0), time(21, 0)), enabled=False, wake_lead_minutes=7)
 
 
@@ -120,7 +118,7 @@ def test_form_starts_from_the_default_without_a_file(monkeypatch, tmp_path):
     from gcal_epd.domain.power_schedule import PowerSchedule
 
     _run(monkeypatch, saves=True, schedule_path=tmp_path / "power_schedule.toml")
-    assert _run.server.schedule == PowerSchedule()
+    assert _run.server.schedule_store.load() == PowerSchedule()
 
 
 def test_form_saves_to_the_configured_file(monkeypatch, tmp_path):
@@ -131,5 +129,5 @@ def test_form_saves_to_the_configured_file(monkeypatch, tmp_path):
     path = tmp_path / "power_schedule.toml"
     _run(monkeypatch, saves=True, schedule_path=path)
     chosen = PowerSchedule(slots=(time(8, 0), time(20, 0)))
-    _run.server.save_schedule(chosen)
+    _run.server.schedule_store.save(chosen)
     assert read_schedule(path) == chosen

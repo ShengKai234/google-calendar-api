@@ -93,9 +93,12 @@ class Rig:
         self.max_sleeps = 50
         self.manager = PowerService(
             PiSugar3Board(PiSugar(self.server), startup_wait=BOARD_WAIT),
-            SystemdActivity(self.system), self.system, lambda: self.schedule, TPE,
+            SystemdActivity(self.system), self.system, self, TPE,
             stay_awake_flag=self.flag, clock=lambda: self.t.astimezone(UTC),
             monotonic=lambda: self.mono, sleep=self.sleep)
+
+    def load(self):  # the rig is its own ScheduleStore
+        return self.schedule
 
     def sleep(self, seconds):
         self.sleeps.append(seconds)

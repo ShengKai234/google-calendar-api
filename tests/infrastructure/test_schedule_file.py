@@ -5,7 +5,10 @@ import pytest
 
 from gcal_epd import config as cfg
 from gcal_epd.domain.power_schedule import PowerSchedule
+from gcal_epd.domain.power_ports import ScheduleStore
 from gcal_epd.infrastructure.schedule_file import (
+    InMemoryScheduleStore,
+    TomlScheduleStore,
     load_schedule,
     read_schedule,
     render_schedule,
@@ -60,3 +63,26 @@ def test_config_paths():
 def test_repo_config_has_power_section():
     conf = cfg.load_config()
     assert str(cfg.power_timezone(conf)) == "Asia/Taipei"
+
+
+def test_unreadable_file_falls_back(tmp_path):
+    path = tmp_path / "p.toml"
+    path.mkdir()  # reading a directory raises OSError, like a permission error
+    assert load_schedule(path) == PowerSchedule()
+
+
+def test_toml_store_round_trip(tmp_path):
+    store = TomlScheduleStore(tmp_path / "p.toml")
+    assert isinstance(store, ScheduleStore)
+    assert store.load() == PowerSchedule()
+    chosen = PowerSchedule(slots=(time(8),))
+    store.save(chosen)
+    assert TomlScheduleStore(tmp_path / "p.toml").load() == chosen
+
+
+def test_in_memory_store_records_saves():
+    store = InMemoryScheduleStore()
+    assert isinstance(store, ScheduleStore) and store.load() == PowerSchedule()
+    chosen = PowerSchedule(slots=(time(8),))
+    store.save(chosen)
+    assert store.load() == chosen and store.saved == [chosen]

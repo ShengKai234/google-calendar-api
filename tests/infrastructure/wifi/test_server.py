@@ -10,6 +10,7 @@ from datetime import time as clock
 import pytest
 
 from gcal_epd.domain.power_schedule import PowerSchedule
+from gcal_epd.infrastructure.schedule_file import InMemoryScheduleStore
 from gcal_epd.infrastructure.wifi.nmcli import Network
 from gcal_epd.infrastructure.wifi.server import (
     WifiSetupServer,
@@ -188,13 +189,15 @@ THREE = PowerSchedule(slots=(clock(6, 0), clock(12, 30), clock(21, 15)),
 
 @pytest.fixture
 def scheduled():
-    """Start a form with a recording save function; yields a starter."""
+    """Start a form with an in-memory store; yields a starter."""
     started = []
 
     def start(schedule=None, save=None):
-        saved = []
-        srv = WifiSetupServer(NETWORKS, port=0, schedule=schedule,
-                              save_schedule=save or saved.append)
+        store = InMemoryScheduleStore(schedule)
+        if save:
+            store.save = save
+        saved = store.saved
+        srv = WifiSetupServer(NETWORKS, port=0, schedule_store=store)
         srv.port = srv._httpd.server_address[1]
         started.append(srv)
         return srv, saved
