@@ -11,7 +11,9 @@ from datetime import time as clock
 import pytest
 
 from gcal_epd.domain.power_schedule import PowerSchedule
-from gcal_epd.infrastructure.onboarding.server import FeedSetupServer, ScheduleFields
+from gcal_epd.infrastructure.onboarding.server import FeedSetupServer
+from gcal_epd.infrastructure.schedule_file import InMemoryScheduleStore
+from gcal_epd.infrastructure.web.schedule_form import ScheduleFields
 from tests.infrastructure.onboarding.test_server import feed_server  # noqa: F401 (fixture)
 
 THREE = PowerSchedule(slots=(clock(6, 0), clock(12, 30), clock(21, 15)),
@@ -33,13 +35,14 @@ def _start(srv) -> str:
 
 @pytest.fixture
 def scheduled(tmp_path):
-    """Start a form with a recording save function; returns (base, server, saved)."""
+    """Start a form with an in-memory store; returns (base, server, saved)."""
     def start(schedule=None, save=None):
-        saved = []
+        store = InMemoryScheduleStore(schedule)
+        if save:
+            store.save = save
         srv = FeedSetupServer(tmp_path / "ics_feeds.toml", port=0, pin="123456",
-                              timeout=20, schedule=schedule,
-                              save_schedule=save or saved.append)
-        return _start(srv), srv, saved
+                              timeout=20, schedule_store=store)
+        return _start(srv), srv, store.saved
     return start
 
 

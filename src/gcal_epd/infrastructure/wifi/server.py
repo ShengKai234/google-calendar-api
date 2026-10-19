@@ -25,13 +25,13 @@ from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs
 
-from gcal_epd.domain.power_schedule import PowerSchedule
-from gcal_epd.infrastructure.onboarding.server import (
+from gcal_epd.domain.power_ports import ScheduleStore
+from gcal_epd.infrastructure.onboarding.server import validate_feed_url
+from gcal_epd.infrastructure.schedule_file import InMemoryScheduleStore
+from gcal_epd.infrastructure.web.schedule_form import (
     SCHEDULE_CSS,
-    SaveSchedule,
     ScheduleFields,
     save_schedule_safely,
-    validate_feed_url,
 )
 from gcal_epd.infrastructure.wifi.nmcli import AP_ADDRESS, Network, is_valid_psk
 
@@ -210,7 +210,7 @@ class _Handler(BaseHTTPRequestHandler):
         # Saved now, not after the join: the times do not depend on the
         # network (or the calendar links), and a failed join reloads the
         # form, which should show what was just chosen.
-        if schedule is not None and save_schedule_safely(self.server.save_schedule,
+        if schedule is not None and save_schedule_safely(self.server.schedule_store,
                                                          schedule):
             self.server.schedule = schedule
 
@@ -228,15 +228,14 @@ class WifiSetupServer:
     """The form, served in the background; the controller polls for a submission."""
 
     def __init__(self, networks: list[Network], port: int = DEFAULT_PORT,
-                 schedule: PowerSchedule | None = None,
-                 save_schedule: SaveSchedule = lambda schedule: None) -> None:
+                 schedule_store: ScheduleStore | None = None) -> None:
         self.port = port
         self._httpd = ThreadingHTTPServer(("0.0.0.0", port), _Handler)
         self._httpd.daemon_threads = True
         self._httpd.networks = list(networks)
-        # The wake-up times the form starts from, and where a new set goes.
-        self._httpd.schedule = schedule or PowerSchedule()
-        self._httpd.save_schedule = save_schedule
+        # Where the wake-up times are kept; the form starts from what it holds.
+        self._httpd.schedule_store = schedule_store or InMemoryScheduleStore()
+        self._httpd.schedule = self._httpd.schedule_store.load()
         self._httpd.error = ""
         self._httpd.pending = None
         self._httpd.lock = threading.Lock()

@@ -59,7 +59,7 @@ def load_schedule(path: Path) -> PowerSchedule:
     """
     try:
         return read_schedule(path)
-    except ValueError as e:
+    except (ValueError, OSError) as e:  # broken, or unreadable (permissions)
         log.warning("Using the default power schedule: %s", e)
         return PowerSchedule()
 
@@ -78,3 +78,32 @@ def write_schedule(path: Path, schedule: PowerSchedule, owner_of=None, chown=os.
         st = Path(owner_of).stat()
         chown(tmp, st.st_uid, st.st_gid)
     os.replace(tmp, path)
+
+
+class TomlScheduleStore:
+    """The ScheduleStore (domain/power_ports.py) backed by this file."""
+
+    def __init__(self, path: Path, owner_of=None) -> None:
+        self.path = Path(path)
+        self.owner_of = owner_of  # see write_schedule
+
+    def load(self) -> PowerSchedule:
+        return load_schedule(self.path)
+
+    def save(self, schedule: PowerSchedule) -> None:
+        write_schedule(self.path, schedule, owner_of=self.owner_of)
+
+
+class InMemoryScheduleStore:
+    """A ScheduleStore that keeps nothing on disk: a form run on its own, tests."""
+
+    def __init__(self, schedule: PowerSchedule | None = None) -> None:
+        self.schedule = schedule or PowerSchedule()
+        self.saved: list[PowerSchedule] = []
+
+    def load(self) -> PowerSchedule:
+        return self.schedule
+
+    def save(self, schedule: PowerSchedule) -> None:
+        self.schedule = schedule
+        self.saved.append(schedule)

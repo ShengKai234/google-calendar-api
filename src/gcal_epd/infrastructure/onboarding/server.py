@@ -14,15 +14,20 @@ import re
 import secrets
 import socket
 import time
-from dataclasses import dataclass
 from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Callable
 from urllib.parse import parse_qs, urlsplit
 
-from gcal_epd.domain.power_schedule import PowerSchedule, format_slot, parse_slot
+from gcal_epd.domain.power_ports import ScheduleStore
+from gcal_epd.domain.power_schedule import format_slot
 from gcal_epd.infrastructure.feeds_file import write_feeds_file
+from gcal_epd.infrastructure.schedule_file import InMemoryScheduleStore
+from gcal_epd.infrastructure.web.schedule_form import (
+    SCHEDULE_CSS,
+    ScheduleFields,
+    save_schedule_safely,
+)
 
 log = logging.getLogger(__name__)
 
@@ -113,85 +118,6 @@ def inspect_feed(url: str, timeout: int = 20) -> tuple[int, str]:
 def check_feed(url: str, timeout: int = 20) -> str:
     """"" if the feed downloads and parses, else what went wrong."""
     return inspect_feed(url, timeout)[1]
-
-
-# --- wake-up times, shared by this form and the Wi-Fi hotspot form ----------
-
-SaveSchedule = Callable[[PowerSchedule], None]
-
-_SCHEDULE_HTML = """<fieldset class="wake"><legend>Display wake-up times</legend>
-<input type="hidden" name="schedule" value="1">
-<div class="slots">{inputs}</div>
-<label class="check"><input type="checkbox" name="enabled" value="1"{checked}>
-Turn off between updates to save battery</label>
-<small>The display wakes a few minutes before each time to refresh the
-calendar, and is off in between.</small></fieldset>"""
-
-
-@dataclass
-class ScheduleFields:
-    """The wake-up section of a form: the times as typed, and the checkbox.
-
-    Every time input shares the field name "slot", and any number of them
-    is accepted (blanks ignored), so adding an "Add time" button later is
-    a page-only change. The hidden "schedule" field marks a form that has
-    the section: without it, an unticked checkbox and a missing section
-    would look the same.
-    """
-    slots: list[str]
-    enabled: bool
-
-    @classmethod
-    def of(cls, schedule: PowerSchedule) -> "ScheduleFields":
-        return cls([format_slot(s) for s in schedule.slots], schedule.enabled)
-
-    @classmethod
-    def from_form(cls, form: dict[str, list[str]]) -> "ScheduleFields | None":
-        """The section as submitted, or None if the form had none."""
-        if "schedule" not in form:
-            return None
-        return cls([s.strip() for s in form.get("slot", [])], "enabled" in form)
-
-    def to_schedule(self, current: PowerSchedule) -> PowerSchedule:
-        """Raise ValueError, with a message for the form, if the times are wrong.
-
-        The wake-up lead is not on the form, so it is kept from `current`.
-        """
-        return PowerSchedule(slots=tuple(parse_slot(s) for s in self.slots if s),
-                             enabled=self.enabled,
-                             wake_lead_minutes=current.wake_lead_minutes)
-
-    def html(self) -> str:
-        slots = self.slots or [""]  # always somewhere to type a time
-        inputs = "".join(
-            f'<input type="time" name="slot" aria-label="Wake-up time {i}"'
-            f' value="{escape(s)}">' for i, s in enumerate(slots, 1))
-        return _SCHEDULE_HTML.format(inputs=inputs,
-                                     checked=" checked" if self.enabled else "")
-
-
-# Rules for the section above, for the <style> of a page that shows it.
-SCHEDULE_CSS = """fieldset.wake{border:1px solid #8888;border-radius:8px;margin:1.5rem 0 0;
-padding:.4rem 1rem 1rem}
-legend{font-weight:600;padding:0 .3rem}
-.slots{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.3rem}
-.slots input{flex:1 1 7rem;width:auto}
-label.check{display:flex;gap:.5rem;align-items:center;font-weight:400}
-label.check input{width:auto;margin:0}"""
-
-
-def save_schedule_safely(save: SaveSchedule, schedule: PowerSchedule) -> bool:
-    """Save the times; a failure is logged, never fatal to the rest of setup."""
-    try:
-        save(schedule)
-    except Exception as e:  # a full disk, a broken config.toml
-
-        log.warning("Could not save the wake-up times: %s", e)
-        return False
-    log.info("Saved wake-up times %s (%s).",
-             ", ".join(format_slot(s) for s in schedule.slots),
-             "power off between" if schedule.enabled else "always on")
-    return True
 
 
 _PAGE = """<!doctype html><html><head><meta charset="utf-8">
@@ -349,7 +275,7 @@ class _Handler(BaseHTTPRequestHandler):
                  len(feeds), self.server.feeds_path.name)
         wake_note = ""
         if schedule is not None:
-            if save_schedule_safely(self.server.save_schedule, schedule):
+            if save_schedule_safely(self.server.schedule_store, schedule):
                 self.server.schedule = schedule
                 wake_note = "Wake-up times: " + ", ".join(
                     format_slot(s) for s in schedule.slots) + "."
@@ -366,14 +292,13 @@ class FeedSetupServer:
 
     def __init__(self, feeds_path, port: int = DEFAULT_PORT,
                  pin: str | None = None, timeout: int = DEFAULT_TIMEOUT,
-                 notice: str = "", schedule: PowerSchedule | None = None,
-                 save_schedule: SaveSchedule = lambda schedule: None) -> None:
+                 notice: str = "", schedule_store: ScheduleStore | None = None) -> None:
         self.feeds_path = Path(feeds_path)
         self.notice = notice  # shown on the form, e.g. why setup reopened
-        # The wake-up times the form starts from, and where a new set goes;
-        # the caller knows the file, the server only the function.
-        self.schedule = schedule or PowerSchedule()
-        self.save_schedule = save_schedule
+        # Where the wake-up times are kept; the caller knows the file, the
+        # server only the store. The form starts from what it holds.
+        self.schedule_store = schedule_store or InMemoryScheduleStore()
+        self.schedule = self.schedule_store.load()
         self.port = port
         self.pin = pin or generate_pin()
         self.timeout = timeout
@@ -390,7 +315,7 @@ class FeedSetupServer:
         httpd.feeds_path = self.feeds_path
         httpd.notice = self.notice
         httpd.schedule = self.schedule
-        httpd.save_schedule = self.save_schedule
+        httpd.schedule_store = self.schedule_store
         httpd.configured = False
         httpd.timeout = 1
 

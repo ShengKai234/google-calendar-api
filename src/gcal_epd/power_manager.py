@@ -34,7 +34,7 @@ from gcal_epd.infrastructure.power.activity import SystemdActivity
 from gcal_epd.infrastructure.power.boards import make_board
 from gcal_epd.infrastructure.power.system import System
 from gcal_epd.infrastructure.power.timer_dropin import DROPIN, apply_schedule
-from gcal_epd.infrastructure.schedule_file import load_schedule
+from gcal_epd.infrastructure.schedule_file import TomlScheduleStore
 
 log = logging.getLogger(__name__)
 
@@ -53,10 +53,10 @@ def main(argv: list[str] | None = None) -> int:
 
     config = load_config()
     tz = power_timezone(config)
-    path = schedule_file(config)
+    schedules = TomlScheduleStore(schedule_file(config))
     system = System()
     service = PowerService(make_board(power_board(config)), SystemdActivity(system), system,
-                           lambda: load_schedule(path), tz)
+                           schedules, tz)
 
     if args.command == "status":
         print("\n".join(service.status()))
@@ -68,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
             log.info("%s does not answer: no RTC to sync with.", service.board.name)
     if args.command in ("apply-schedule", "boot"):
         try:
-            apply_schedule(load_schedule(path), tz, system)
+            apply_schedule(schedules.load(), tz, system)
         except OSError as e:
             log.error("Could not write %s: %s (run as root)", DROPIN, e)
             return 1

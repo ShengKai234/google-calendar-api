@@ -1,13 +1,16 @@
 """
 What the power manager needs from the hardware and the host, as interfaces.
 
-The power service (application/power_service.py) depends only on these;
+The power service (application/power_service.py) and the setup forms
+depend only on these;
 the adapters live in infrastructure/power/. A new battery board (Witty Pi,
 a Pi 5's own RTC, ...) is a new adapter, with no change to the rules.
 """
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, runtime_checkable
+
+from gcal_epd.domain.power_schedule import PowerSchedule
 
 
 class WakeBoardError(RuntimeError):
@@ -80,3 +83,13 @@ class HostControl(Protocol):
     def poweroff(self) -> bool:
         """Start a clean shutdown; False if it could not be started."""
         ...
+
+
+@runtime_checkable
+class ScheduleStore(Protocol):
+    """Where the power schedule is kept (the setup forms write, the service reads)."""
+    def load(self) -> PowerSchedule:
+        """The saved schedule; the default if there is none or it is unreadable."""
+        ...
+
+    def save(self, schedule: PowerSchedule) -> None: ...

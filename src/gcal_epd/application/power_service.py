@@ -17,8 +17,14 @@ from typing import Callable
 from zoneinfo import ZoneInfo
 
 from gcal_epd.domain.power_policy import Snapshot, decide
-from gcal_epd.domain.power_ports import ActivityProbe, HostControl, WakeBoard, WakeBoardError
-from gcal_epd.domain.power_schedule import PowerSchedule, format_slot
+from gcal_epd.domain.power_ports import (
+    ActivityProbe,
+    HostControl,
+    ScheduleStore,
+    WakeBoard,
+    WakeBoardError,
+)
+from gcal_epd.domain.power_schedule import format_slot
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +37,7 @@ RTC_BEHIND = timedelta(minutes=5)
 
 class PowerService:
     def __init__(self, board: WakeBoard, activity: ActivityProbe, host: HostControl,
-                 load_schedule: Callable[[], PowerSchedule], tz: ZoneInfo, *,
+                 schedules: ScheduleStore, tz: ZoneInfo, *,
                  stay_awake_flag: Path = STAY_AWAKE_FLAG,
                  clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
                  monotonic: Callable[[], float] = time.monotonic,
@@ -39,7 +45,7 @@ class PowerService:
         self.board = board
         self.activity = activity
         self.host = host
-        self._load_schedule = load_schedule
+        self.schedules = schedules
         self.tz = tz
         self._flag = stay_awake_flag
         self._clock = clock
@@ -65,7 +71,7 @@ class PowerService:
         return Snapshot(
             now=now,
             boot=wall(0),
-            schedule=self._load_schedule(),
+            schedule=self.schedules.load(),
             board=self.board.available(),
             stay_awake=self._flag.exists(),
             setup=busy.setup,
@@ -122,7 +128,7 @@ class PowerService:
         except WakeBoardError as e:
             log.warning("Could not write the system time to the RTC: %s", e)
         now = self.now()
-        wake = self._load_schedule().next_wake(now)
+        wake = self.schedules.load().next_wake(now)
         if dry_run:
             log.info("Dry run: would set the wake-up alarm for %s and power off.",
                      wake.isoformat())
