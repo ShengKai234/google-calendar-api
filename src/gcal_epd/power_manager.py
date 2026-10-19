@@ -1,7 +1,7 @@
 """
-Power manager for a display on a PiSugar 3 battery.
+Power manager for a battery display with a wake-up board (a PiSugar 3).
 
-The Pi is off most of the day. The PiSugar's RTC alarm switches it on a few
+The Pi is off most of the day. The board's RTC alarm switches it on a few
 minutes before each slot of the power schedule; it boots, joins Wi-Fi and
 redraws the calendar, and then this sets the alarm for the next wake-up
 and powers off. The e-paper keeps its image without power.
@@ -17,15 +17,15 @@ Runs at boot as root (deploy/epd-power.service):
 Powering off is the risky step, so it is refused whenever in doubt: a
 person may be setting the display up or logged in, a refresh may be
 drawing, or the alarm may not have taken (the Pi would never wake again).
-Without a PiSugar (pisugar-server not answering) it does nothing at all,
-and the Pi behaves as the always-on display it was before.
+Without a board (none configured, or it does not answer) it does nothing
+at all, and the Pi behaves as the always-on display it was before. The
+board is picked by [power] board in config.toml (infrastructure/power/boards.py).
 
 To keep a battery Pi on for debugging, create the stay-awake flag on the
 boot partition from any computer: an empty file named `epd-stay-awake`.
 """
 import argparse
 import logging
-import shutil
 import sys
 import time
 from dataclasses import dataclass
@@ -35,7 +35,7 @@ from typing import Callable
 from zoneinfo import ZoneInfo
 
 from gcal_epd.domain.power_schedule import PowerSchedule, format_slot
-from gcal_epd.infrastructure.power.pisugar import EVERY_DAY, PiSugar, PiSugarError
+from gcal_epd.domain.power_ports import WakeBoard, WakeBoardError
 from gcal_epd.infrastructure.power.system import System
 from gcal_epd.infrastructure.power.timer_dropin import DROPIN, TIMER_UNIT, write_dropin
 
@@ -46,7 +46,6 @@ AWAKE_CAP = 900        # give up on a refresh this long after waking, to save ba
 MIN_OFF = 180          # never power off for a wake-up closer than this: shutdown
                        # takes ~30 s on a Zero, and a missed alarm waits a day
 POLL = 20              # seconds between checks
-PISUGAR_WAIT = 15      # seconds for pisugar-server to answer at boot
 STAY_AWAKE_FLAG = Path("/boot/firmware/epd-stay-awake")
 REFRESH_UNITS = ("gcal-epd.service", "epd-feed-setup.service")
 SETUP_UNITS = ("epd-wifi-setup.service",)
@@ -65,7 +64,7 @@ class Snapshot:
     now: datetime                 # aware, in the schedule's timezone
     boot: datetime                # when this boot began
     schedule: PowerSchedule
-    pisugar: bool = True          # pisugar-server answers
+    board: bool = True            # the wake-up board answers
     stay_awake: bool = False      # the flag file exists
     setup: str = ""               # a setup that is running, "" if none
     refreshing: str = ""          # a refresh that is running, "" if none
@@ -84,12 +83,12 @@ def decide(s: Snapshot) -> Decision:
     """Whether to power off now, and why. Pure, so every rule is testable.
 
     The reasons to stay on come first, in order of who would be hurt: no
-    PiSugar (nothing could switch the Pi back on), the user's choices, a
+    board (nothing could switch the Pi back on), the user's choices, a
     person at the display, a refresh drawing. Only then the timing.
     """
-    if not s.pisugar:
-        return Decision(False, "pisugar-server is not reachable: no PiSugar, "
-                               "so this Pi stays always on", final=True)
+    if not s.board:
+        return Decision(False, "no wake-up board answers: nothing could switch "
+                               "this Pi back on, so it stays always on", final=True)
     if not s.schedule.enabled:
         return Decision(False, "the power schedule is turned off")
     if s.stay_awake:
@@ -145,19 +144,17 @@ def classify_processes(argvs: list[list[str]]) -> tuple[str, str]:
 
 
 class PowerManager:
-    def __init__(self, pisugar: PiSugar, system: System,
+    def __init__(self, board: WakeBoard, system: System,
                  load_schedule: Callable[[], PowerSchedule], tz: ZoneInfo, *,
                  stay_awake_flag: Path = STAY_AWAKE_FLAG,
-                 pisugar_wait: float = PISUGAR_WAIT,
                  clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
                  monotonic: Callable[[], float] = time.monotonic,
                  sleep: Callable[[float], None] = time.sleep) -> None:
-        self.pisugar = pisugar
+        self.board = board
         self.system = system
         self._load_schedule = load_schedule
         self.tz = tz
         self._flag = stay_awake_flag
-        self._pisugar_wait = pisugar_wait
         self._clock = clock
         self._monotonic = monotonic
         self._sleep = sleep
@@ -198,7 +195,7 @@ class PowerManager:
             now=now,
             boot=wall(0),
             schedule=self._load_schedule(),
-            pisugar=self.pisugar.available(),
+            board=self.board.available(),
             stay_awake=self._flag.exists(),
             setup=setup or proc_setup,
             refreshing=refreshing or proc_refresh,
@@ -206,10 +203,10 @@ class PowerManager:
             last_refresh=last_refresh,
         )
 
-    def wait_for_pisugar(self) -> bool:
-        """pisugar-server starts alongside us at boot; give it a moment."""
-        deadline = self._monotonic() + self._pisugar_wait
-        while not self.pisugar.available():
+    def wait_for_board(self) -> bool:
+        """The board's service starts alongside us at boot; give it a moment."""
+        deadline = self._monotonic() + self.board.startup_wait
+        while not self.board.available():
             if self._monotonic() >= deadline:
                 return False
             self._sleep(1)
@@ -220,27 +217,27 @@ class PowerManager:
         """Put the right time on whichever clock lacks it.
 
         The Pi has no RTC of its own and boots with the time it shut down
-        at, so until NTP syncs it takes the PiSugar's RTC time. Once NTP has
+        at, so until NTP syncs it takes the board's RTC time. Once NTP has
         synced, the RTC is corrected from it instead: the alarm fires by the
         RTC, so the RTC is the clock that must be right.
         """
         synced = self.system.ntp_synchronized()
         try:
             if synced:
-                self.pisugar.pi_to_rtc()
+                self.board.system_to_rtc()
                 log.info("System clock is NTP-synchronised; wrote it to the RTC.")
                 return
-            rtc = self.pisugar.rtc_time()
+            rtc = self.board.rtc_time()
             system_now = self._clock()
             if rtc < RTC_FLOOR or rtc < system_now - RTC_BEHIND:
                 log.warning("RTC reads %s, behind the system clock (%s); "
                             "not using it. Waiting for NTP.", rtc.isoformat(),
                             system_now.isoformat())
                 return
-            self.pisugar.rtc_to_pi()
+            self.board.rtc_to_system()
             log.info("System clock set from the RTC: %s", rtc.isoformat())
-        except PiSugarError as e:
-            log.warning("Could not sync the clock with the PiSugar RTC: %s", e)
+        except WakeBoardError as e:
+            log.warning("Could not sync the clock with the %s RTC: %s", self.board.name, e)
 
     def arm_and_power_off(self, dry_run: bool = False) -> bool:
         """Set the alarm for the next wake-up, verify it, then power off.
@@ -250,8 +247,8 @@ class PowerManager:
         """
         try:
             if self.system.ntp_synchronized():
-                self.pisugar.pi_to_rtc()  # the alarm fires by the RTC
-        except PiSugarError as e:
+                self.board.system_to_rtc()  # the alarm fires by the RTC
+        except WakeBoardError as e:
             log.warning("Could not write the system time to the RTC: %s", e)
         now = self.now()
         wake = self._load_schedule().next_wake(now)
@@ -260,14 +257,13 @@ class PowerManager:
                      wake.isoformat())
             return True
         try:
-            self.pisugar.set_alarm_verified(wake, EVERY_DAY)
-        except PiSugarError as e:
+            self.board.arm(wake)
+        except WakeBoardError as e:
             log.error("NOT powering off: the wake-up alarm for %s could not be set "
                       "and verified (%s). Staying on, or the Pi would never wake.",
                       wake.isoformat(), e)
             return False
-        log.info("Wake-up alarm set for %s (repeats daily as a safety net). "
-                 "Powering off.", wake.isoformat())
+        log.info("Wake-up alarm set for %s. Powering off.", wake.isoformat())
         if not self.system.poweroff():
             log.error("systemctl poweroff failed; staying on.")
             return False
@@ -275,22 +271,19 @@ class PowerManager:
 
     def run(self, dry_run: bool = False, poll: float = POLL) -> str:
         """Watch until it is time to power off. Returns why it stopped:
-        "no-pisugar" or "powered-off" (in a dry run: would have)."""
-        if not self.wait_for_pisugar():
-            log.info("pisugar-server is not reachable: no PiSugar, nothing to manage.")
-            return "no-pisugar"
-        try:
-            log.info("PiSugar: battery %.0f%%, plugged in: %s",
-                     self.pisugar.battery(), self.pisugar.power_plugged())
-        except PiSugarError as e:
-            log.warning("Could not read the battery: %s", e)
+        "no-board" or "powered-off" (in a dry run: would have)."""
+        if not self.wait_for_board():
+            log.info("%s does not answer: nothing to manage.", self.board.name)
+            return "no-board"
+        for label, value in self.board.report(self.tz):
+            log.info("%s: %s %s", self.board.name, label, value)
 
         last_reason = None
         while True:
             decision = decide(self.snapshot())
             if decision.final:
                 log.info("%s", decision.reason)
-                return "no-pisugar"
+                return "no-board"
             if decision.power_off:
                 log.info("Time to power off: %s.", decision.reason)
                 if self.arm_and_power_off(dry_run):
@@ -303,25 +296,11 @@ class PowerManager:
 
     def status(self) -> list[str]:
         """A report for a person at an SSH prompt."""
-        lines = []
-
-        def ask(label: str, read: Callable[[], object]) -> None:
-            try:
-                value = read()
-            except PiSugarError as e:
-                value = f"unavailable ({e})"
-            lines.append(f"{label:<14}{value}")
-
-        reachable = self.pisugar.available()
-        lines.append(f"{'PiSugar':<14}{'reachable' if reachable else 'not reachable'}")
+        reachable = self.board.available()
+        lines = [f"{'Board':<14}{self.board.name}, "
+                 f"{'reachable' if reachable else 'not reachable'}"]
         if reachable:
-            ask("Battery", lambda: f"{self.pisugar.battery():.0f}%")
-            ask("Plugged in", lambda: "yes" if self.pisugar.power_plugged() else "no")
-            ask("RTC time", lambda: self.pisugar.rtc_time().astimezone(self.tz).isoformat())
-            ask("Alarm", lambda: (
-                f"{_hm(self.pisugar.alarm_time().astimezone(self.tz))} "
-                f"({'enabled' if self.pisugar.alarm_enabled() else 'disabled'}, "
-                f"repeat mask {self.pisugar.alarm_repeat()})"))
+            lines += [f"{label:<14}{value}" for label, value in self.board.report(self.tz)]
         synced = self.system.ntp_synchronized()
         lines.append(f"{'Clock synced':<14}"
                      f"{'unknown' if synced is None else 'yes' if synced else 'no'}")
@@ -350,7 +329,7 @@ def apply_schedule(schedule: PowerSchedule, tz: ZoneInfo, system: System,
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Power manager for a PiSugar 3 battery")
+    parser = argparse.ArgumentParser(description="Power manager for a battery wake-up board")
     sub = parser.add_subparsers(dest="command", required=True)
     run_p = sub.add_parser("run", help="wait for the refresh, set the alarm, power off")
     run_p.add_argument("--dry-run", action="store_true", help="decide, but never power off")
@@ -361,26 +340,25 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")  # not at import
 
-    from gcal_epd.config import load_config, power_timezone, schedule_file
+    from gcal_epd.config import load_config, power_board, power_timezone, schedule_file
+    from gcal_epd.infrastructure.power.boards import make_board
     from gcal_epd.infrastructure.schedule_file import load_schedule
 
     config = load_config()
     tz = power_timezone(config)
     path = schedule_file(config)
     system = System()
-    # Not installed: do not hold up Wi-Fi setup at every boot waiting for it.
-    wait = PISUGAR_WAIT if shutil.which("pisugar-server") else 0
-    manager = PowerManager(PiSugar(), system, lambda: load_schedule(path), tz,
-                           pisugar_wait=wait)
+    manager = PowerManager(make_board(power_board(config)), system,
+                           lambda: load_schedule(path), tz)
 
     if args.command == "status":
         print("\n".join(manager.status()))
         return 0
     if args.command in ("sync-clock", "boot"):
-        if manager.wait_for_pisugar():
+        if manager.wait_for_board():
             manager.sync_clock()
         else:
-            log.info("pisugar-server is not reachable: no RTC to sync with.")
+            log.info("%s does not answer: no RTC to sync with.", manager.board.name)
     if args.command in ("apply-schedule", "boot"):
         try:
             apply_schedule(load_schedule(path), tz, system)

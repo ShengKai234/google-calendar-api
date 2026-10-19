@@ -21,3 +21,6 @@ font_path = "assets/fonts/NotoSansCJKtc-Regular.otf"
 # form; missing = 07:00 and 19:00). The slots are wall-clock times here:
 timezone = "Asia/Taipei"
 schedule_file = "power_schedule.toml"
+# The board that powers the Pi off and wakes it: "auto" (a PiSugar 3 if
+# pisugar-server is installed), "pisugar3", or "none" (mains, always on).
+board = "auto"
