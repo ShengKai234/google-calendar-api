@@ -111,6 +111,69 @@ def test_saved_wifi_profiles_excludes_hotspot_and_other_types():
     assert _nm(fake).saved_wifi_profiles() == ["preconfigured"]
 
 
+# --- radio ---
+
+def _state(code):
+    return (("-t", "-f", "GENERAL.STATE"), 0, f"GENERAL.STATE:{code}\n", "")
+
+
+def test_radio_on_unblocks_rfkill_and_turns_networkmanagers_radio_on():
+    """A card with no Wi-Fi set up has the radio off at both levels."""
+    fake = FakeNmcli([_state("30 (disconnected)")])
+    assert _nm(fake).radio_on()
+    assert ["rfkill", "unblock", "wifi"] in fake.calls
+    assert fake.called("radio", "wifi", "on")
+
+
+def test_radio_on_waits_until_the_interface_leaves_unavailable():
+    states = iter(["20 (unavailable)", "20 (unavailable)", "30 (disconnected)"])
+
+    def run(args, timeout):
+        if args[1:4] == ["-t", "-f", "GENERAL.STATE"]:
+            return subprocess.CompletedProcess(args, 0, f"GENERAL.STATE:{next(states)}\n", "")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    slept = []
+    assert NetworkManager(run=run, sleep=slept.append).radio_on()
+    assert len(slept) == 2
+
+
+def test_radio_on_gives_up_at_the_deadline():
+    t = [0.0]
+    fake = FakeNmcli([_state("20 (unavailable)")])
+    nm = NetworkManager(run=fake, sleep=lambda s: t.__setitem__(0, t[0] + s),
+                        clock=lambda: t[0])
+    assert not nm.radio_on(timeout=5)
+    assert t[0] >= 5
+
+
+def test_radio_on_goes_ahead_when_rfkill_or_nmcli_fail():
+    """Missing rfkill or a refused radio command must not stop the hotspot try."""
+    def run(args, timeout):
+        if args[0] == "rfkill":
+            raise FileNotFoundError("rfkill")
+        return subprocess.CompletedProcess(args, 4, "", "Error: not authorized")
+
+    assert NetworkManager(run=run, sleep=lambda s: None).radio_on()
+
+
+@pytest.mark.parametrize("use", [
+    lambda nm: nm.wait_connected(0),
+    lambda nm: nm.scan(),
+    lambda nm: nm.start_hotspot("X", "abcdefgh23"),
+    lambda nm: nm.resume_hotspot(),
+    lambda nm: nm.connect("Home", PASSWORD),
+], ids=["wait_connected", "scan", "start_hotspot", "resume_hotspot", "connect"])
+def test_every_use_of_the_radio_turns_it_on_first(use):
+    """Pi OS can block Wi-Fi again during boot, so once is not enough."""
+    fake = FakeNmcli()
+    use(_nm(fake))
+    radio = ["nmcli", "radio", "wifi", "on"]
+    first_other = next(c for c in fake.calls if c[0] != "rfkill" and c != radio
+                       and c[1:4] != ["-t", "-f", "GENERAL.STATE"])
+    assert fake.calls.index(radio) < fake.calls.index(first_other)
+
+
 # --- hotspot ---
 
 def test_start_hotspot_pins_address_and_disables_autoconnect():

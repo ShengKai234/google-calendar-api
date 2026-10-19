@@ -26,6 +26,9 @@ AP_ADDRESS = "10.42.0.1"
 AP_PREFIX = 24
 _CLIENT_PREFIX = "wifi-"
 _WIFI_TYPE = "802-11-wireless"
+# nmcli device states below 30 ("disconnected"): 10 unmanaged, 20 unavailable.
+_DEVICE_USABLE = 30
+RADIO_WAIT = 15  # seconds for wlan0 to become usable once the radio is on
 
 Runner = Callable[[list[str], float], subprocess.CompletedProcess]
 
@@ -104,6 +107,55 @@ class NetworkManager:
             raise NmcliError(f"{what} failed: {result.stderr.strip()}")
         return result.stdout
 
+    # --- radio ------------------------------------------------------
+    def radio_on(self, timeout: float = RADIO_WAIT) -> bool:
+        """Turn the Wi-Fi radio on; True once wlan0 is usable, or cannot tell.
+
+        Until a Wi-Fi country is set through Pi OS's own tools (Imager,
+        raspi-config), Wi-Fi is rfkill-blocked and NetworkManager keeps its
+        radio off (WirelessEnabled=false in its state file). Either one leaves
+        wlan0 "unavailable": a scan finds nothing and the hotspot fails with
+        "No suitable device found". Pi OS can also block Wi-Fi again during
+        boot, so this runs before each use of the radio, not once. Failures
+        are logged, not raised: the step that needs the radio reports them.
+        """
+        try:
+            result = self._run(["rfkill", "unblock", "wifi"], 10)
+            if result.returncode != 0:
+                log.warning("rfkill unblock wifi failed: %s", result.stderr.strip())
+        except (OSError, subprocess.TimeoutExpired) as e:
+            log.warning("rfkill unblock wifi failed: %s", e)
+        try:
+            self._nmcli("radio", "wifi", "on")
+        except NmcliError as e:
+            log.warning("Could not turn the Wi-Fi radio on: %s", e)
+
+        deadline = self._clock() + timeout
+        while True:
+            state = self._device_state()
+            if state is None or state >= _DEVICE_USABLE:
+                return True
+            if self._clock() >= deadline:
+                log.warning("%s still unavailable %ss after turning the radio on",
+                            self.ifname, timeout)
+                return False
+            self._sleep(1)
+
+    def _device_state(self) -> int | None:
+        """nmcli's numeric state of the interface, or None if it cannot tell."""
+        try:
+            out = self._nmcli("-t", "-f", "GENERAL.STATE", "device", "show", self.ifname)
+        except NmcliError:
+            return None
+        for line in out.splitlines():
+            key, _, value = line.partition(":")
+            if key == "GENERAL.STATE":
+                try:
+                    return int(value.split()[0])
+                except (ValueError, IndexError):
+                    return None
+        return None
+
     # --- state ------------------------------------------------------
     def is_connected(self) -> bool:
         """True when the radio is joined to a real network, not our hotspot."""
@@ -121,6 +173,7 @@ class NetworkManager:
         return state.startswith("100") and connection not in ("", AP_CONNECTION)
 
     def wait_connected(self, timeout: float, poll: float = 2) -> bool:
+        self.radio_on()  # a saved network cannot be joined with the radio off
         deadline = self._clock() + timeout
         while True:
             if self.is_connected():
@@ -131,6 +184,7 @@ class NetworkManager:
 
     def scan(self) -> list[Network]:
         """Visible networks, strongest first, one entry per SSID."""
+        self.radio_on()
         try:
             out = self._nmcli("-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi",
                               "list", "ifname", self.ifname, "--rescan", "yes",
@@ -174,6 +228,7 @@ class NetworkManager:
         interface already uses — routing would just break quietly — so that
         is checked first and fails here with a clear message.
         """
+        self.radio_on()
         self._check_ap_subnet_free()
         self.remove_hotspot()
         self._nmcli(
@@ -221,6 +276,7 @@ class NetworkManager:
 
     def resume_hotspot(self) -> None:
         """Bring the same hotspot back, so a phone that joined once rejoins."""
+        self.radio_on()
         self._nmcli("connection", "up", AP_CONNECTION)
 
     def stop_hotspot(self) -> None:
@@ -244,6 +300,7 @@ class NetworkManager:
         single-user appliance and the call runs as root, so it is accepted
         here rather than hand-writing NetworkManager keyfiles.
         """
+        self.radio_on()
         name = _CLIENT_PREFIX + ssid
         try:
             self._nmcli("connection", "delete", name)  # replace a stale password
