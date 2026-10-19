@@ -186,6 +186,10 @@ class NetworkManager:
             "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.proto", "rsn",
             "wifi-sec.pairwise", "ccmp", "wifi-sec.group", "ccmp",
             "wifi-sec.psk", password,
+            # PMF off: on Pi OS Trixie the Zero W's brcmfmac rejects the
+            # management-frame key ("key setting validation failed") and the
+            # hotspot times out in the supplicant. Off, it is up in ~8 s.
+            "wifi-sec.pmf", "disable",
             "ipv4.method", "shared", "ipv4.addresses", f"{AP_ADDRESS}/{AP_PREFIX}",
             "ipv6.method", "disabled",
             secret=True,
