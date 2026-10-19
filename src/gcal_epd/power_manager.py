@@ -30,6 +30,7 @@ import sys
 
 from gcal_epd.application.power_service import PowerService
 from gcal_epd.config import load_config, power_board, power_timezone, schedule_file
+from gcal_epd.infrastructure.power.activity import SystemdActivity
 from gcal_epd.infrastructure.power.boards import make_board
 from gcal_epd.infrastructure.power.system import System
 from gcal_epd.infrastructure.power.timer_dropin import DROPIN, apply_schedule
@@ -54,7 +55,7 @@ def main(argv: list[str] | None = None) -> int:
     tz = power_timezone(config)
     path = schedule_file(config)
     system = System()
-    service = PowerService(make_board(power_board(config)), system,
+    service = PowerService(make_board(power_board(config)), SystemdActivity(system), system,
                            lambda: load_schedule(path), tz)
 
     if args.command == "status":

@@ -8,8 +8,10 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from gcal_epd.application.power_service import PowerService, classify_processes
+from gcal_epd.application.power_service import PowerService
 from gcal_epd.domain.power_policy import GRACE, decide
+from gcal_epd.domain.power_ports import Activity
+from gcal_epd.infrastructure.power.activity import SystemdActivity, classify_processes
 from gcal_epd.domain.power_schedule import PowerSchedule
 from gcal_epd.infrastructure.power.boards import NullBoard
 from gcal_epd.infrastructure.power.pisugar import PiSugar, PiSugar3Board
@@ -90,7 +92,8 @@ class Rig:
         self.sleeps = []
         self.max_sleeps = 50
         self.manager = PowerService(
-            PiSugar3Board(PiSugar(self.server), startup_wait=BOARD_WAIT), self.system, lambda: self.schedule, TPE,
+            PiSugar3Board(PiSugar(self.server), startup_wait=BOARD_WAIT),
+            SystemdActivity(self.system), self.system, lambda: self.schedule, TPE,
             stay_awake_flag=self.flag, clock=lambda: self.t.astimezone(UTC),
             monotonic=lambda: self.mono, sleep=self.sleep)
 
@@ -339,3 +342,15 @@ def test_no_board_never_powers_off(tmp_path):
     assert rig.manager.run() == "no-board"
     assert rig.system.poweroffs == 0 and rig.sleeps == []
     assert "not reachable" in "\n".join(rig.manager.status())
+
+
+def test_any_activity_probe_will_do(tmp_path):
+    """The service needs an ActivityProbe, not systemd: a plain fake works."""
+    class Busy:
+        def activity(self):
+            return Activity(refreshing="a refresh", last_refresh_end=130.0)
+    rig = Rig(tmp_path)
+    rig.manager.activity = Busy()
+    s = rig.manager.snapshot()
+    assert s.refreshing == "a refresh" and s.last_refresh == at(6, 57, 10)
+    assert not decide(s).power_off
