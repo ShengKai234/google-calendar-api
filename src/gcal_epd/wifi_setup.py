@@ -24,11 +24,13 @@ epd-feed-setup to check, and until it runs gcal-epd stands down.
 """
 import argparse
 import logging
+import signal
 import subprocess
 import sys
 import time
 from typing import Callable
 
+from gcal_epd.infrastructure.wifi.hotspot import DEFAULT_HOTSPOT, HOTSPOTS, make_wifi
 from gcal_epd.infrastructure.wifi.nmcli import NetworkManager, NmcliError
 from gcal_epd.infrastructure.wifi.server import (
     DEFAULT_PORT,
@@ -138,6 +140,12 @@ def _make_push(display: bool) -> Push:
     return push
 
 
+def _interrupt(signum, frame) -> None:
+    """End on `systemctl stop` (SIGTERM) as on Ctrl-C, so the hotspot is taken
+    down and wlan0 is handed back to NetworkManager."""
+    raise KeyboardInterrupt
+
+
 def start_units(result: str, units: list[str], run=subprocess.run) -> None:
     """Hand over to the calendar once there is a network, however it came.
 
@@ -173,6 +181,8 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--start-unit", metavar="UNIT", action="append", default=[],
                         help="systemd unit to start once Wi-Fi is up (repeatable)")
+    parser.add_argument("--hotspot", choices=sorted(HOTSPOTS), default=DEFAULT_HOTSPOT,
+                        help="program that runs the setup hotspot (default: %(default)s)")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")  # not at import
 
@@ -181,7 +191,9 @@ def main() -> None:
                   "(Raspberry Pi OS Bookworm or later).")
         sys.exit(1)
 
-    result = run(NetworkManager(),
+    signal.signal(signal.SIGTERM, _interrupt)
+    wifi = make_wifi(NetworkManager(), args.hotspot)
+    result = run(wifi,
                  lambda networks: WifiSetupServer(networks, port=args.port),
                  _make_push(args.display), stash_feeds=_stash_feeds, force=args.force)
 
