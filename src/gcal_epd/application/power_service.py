@@ -1,7 +1,8 @@
 """
 The power service: watch this boot, then arm the wake-up board and power off.
 
-It observes the Pi (WakeBoard, systemd, the stay-awake flag), asks the
+It observes the Pi (the WakeBoard, an ActivityProbe, the stay-awake flag;
+all interfaces from domain/power_ports.py), asks the
 rules in domain/power_policy.py, and acts: sets the clock, sets the alarm,
 powers off. power_manager.py is only its command line and wiring.
 
@@ -16,44 +17,28 @@ from typing import Callable
 from zoneinfo import ZoneInfo
 
 from gcal_epd.domain.power_policy import Snapshot, decide
-from gcal_epd.domain.power_ports import WakeBoard, WakeBoardError
+from gcal_epd.domain.power_ports import ActivityProbe, HostControl, WakeBoard, WakeBoardError
 from gcal_epd.domain.power_schedule import PowerSchedule, format_slot
-from gcal_epd.infrastructure.power.system import System
 
 log = logging.getLogger(__name__)
 
 POLL = 20              # seconds between checks
 STAY_AWAKE_FLAG = Path("/boot/firmware/epd-stay-awake")
-REFRESH_UNITS = ("gcal-epd.service", "epd-feed-setup.service")
-SETUP_UNITS = ("epd-wifi-setup.service",)
 # An RTC older than this was never set (or lost its battery): not a clock.
 RTC_FLOOR = datetime(2026, 1, 1, tzinfo=timezone.utc)
 RTC_BEHIND = timedelta(minutes=5)
 
 
-def classify_processes(argvs: list[list[str]]) -> tuple[str, str]:
-    """(setup, refresh) found among running processes, "" for none."""
-    setup = refresh = ""
-    for argv in argvs:
-        if "gcal_epd.wifi_setup" in argv:
-            setup = "Wi-Fi setup (gcal_epd.wifi_setup)"
-        elif "gcal_epd.main" in argv:
-            if "--setup" in argv:
-                setup = setup or "calendar setup (gcal_epd.main --setup)"
-            else:
-                refresh = "a calendar refresh (gcal_epd.main)"
-    return setup, refresh
-
-
 class PowerService:
-    def __init__(self, board: WakeBoard, system: System,
+    def __init__(self, board: WakeBoard, activity: ActivityProbe, host: HostControl,
                  load_schedule: Callable[[], PowerSchedule], tz: ZoneInfo, *,
                  stay_awake_flag: Path = STAY_AWAKE_FLAG,
                  clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
                  monotonic: Callable[[], float] = time.monotonic,
                  sleep: Callable[[float], None] = time.sleep) -> None:
         self.board = board
-        self.system = system
+        self.activity = activity
+        self.host = host
         self._load_schedule = load_schedule
         self.tz = tz
         self._flag = stay_awake_flag
@@ -73,25 +58,9 @@ class PowerService:
             # safe across the jump when the clock is set from the RTC or NTP.
             return now - timedelta(seconds=mono - monotonic_s)
 
-        setup = refreshing = ""
-        for unit in SETUP_UNITS:
-            state = self.system.unit_state(unit)
-            if state is None:
-                setup = f"{unit} (state unknown)"
-            elif state.busy:
-                setup = unit
-        last_refresh = None
-        for unit in REFRESH_UNITS:
-            state = self.system.unit_state(unit)
-            if state is None:
-                refreshing = f"{unit} (state unknown)"
-                continue
-            if state.busy:
-                refreshing = unit
-            if state.last_exit is not None:
-                ended = wall(state.last_exit)
-                last_refresh = max(last_refresh or ended, ended)
-        proc_setup, proc_refresh = classify_processes(self.system.command_lines())
+        busy = self.activity.activity()
+        last_refresh = (None if busy.last_refresh_end is None
+                        else wall(busy.last_refresh_end))
 
         return Snapshot(
             now=now,
@@ -99,9 +68,9 @@ class PowerService:
             schedule=self._load_schedule(),
             board=self.board.available(),
             stay_awake=self._flag.exists(),
-            setup=setup or proc_setup,
-            refreshing=refreshing or proc_refresh,
-            ssh_sessions=self.system.remote_sessions(),
+            setup=busy.setup,
+            refreshing=busy.refreshing,
+            ssh_sessions=busy.ssh_sessions,
             last_refresh=last_refresh,
         )
 
@@ -123,7 +92,7 @@ class PowerService:
         synced, the RTC is corrected from it instead: the alarm fires by the
         RTC, so the RTC is the clock that must be right.
         """
-        synced = self.system.ntp_synchronized()
+        synced = self.host.ntp_synchronized()
         try:
             if synced:
                 self.board.system_to_rtc()
@@ -148,7 +117,7 @@ class PowerService:
         read back: off without an alarm, it would never come back on.
         """
         try:
-            if self.system.ntp_synchronized():
+            if self.host.ntp_synchronized():
                 self.board.system_to_rtc()  # the alarm fires by the RTC
         except WakeBoardError as e:
             log.warning("Could not write the system time to the RTC: %s", e)
@@ -166,7 +135,7 @@ class PowerService:
                       wake.isoformat(), e)
             return False
         log.info("Wake-up alarm set for %s. Powering off.", wake.isoformat())
-        if not self.system.poweroff():
+        if not self.host.poweroff():
             log.error("systemctl poweroff failed; staying on.")
             return False
         return True
@@ -203,7 +172,7 @@ class PowerService:
                  f"{'reachable' if reachable else 'not reachable'}"]
         if reachable:
             lines += [f"{label:<14}{value}" for label, value in self.board.report(self.tz)]
-        synced = self.system.ntp_synchronized()
+        synced = self.host.ntp_synchronized()
         lines.append(f"{'Clock synced':<14}"
                      f"{'unknown' if synced is None else 'yes' if synced else 'no'}")
         s = self.snapshot()

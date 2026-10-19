@@ -5,6 +5,7 @@ The power service (application/power_service.py) depends only on these;
 the adapters live in infrastructure/power/. A new battery board (Witty Pi,
 a Pi 5's own RTC, ...) is a new adapter, with no change to the rules.
 """
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 
@@ -49,4 +50,33 @@ class WakeBoard(Protocol):
 
     def report(self, tz) -> list[tuple[str, str]]:
         """(label, value) lines for `status`: battery, alarm, whatever it has."""
+        ...
+
+
+@dataclass(frozen=True)
+class Activity:
+    """What the Pi is busy with, as far as powering off is concerned."""
+    setup: str = ""                         # a setup that is running, "" if none
+    refreshing: str = ""                    # a refresh that is running, "" if none
+    ssh_sessions: int | None = 0            # None: cannot tell
+    last_refresh_end: float | None = None   # CLOCK_MONOTONIC seconds, None if none
+
+
+@runtime_checkable
+class ActivityProbe(Protocol):
+    """Answers "is anyone or anything using the Pi?" (systemd, /proc, logind).
+
+    When it cannot tell, it says so in the answer (a "state unknown"
+    setup or refresh, ssh_sessions None): the rules then keep the Pi on.
+    """
+    def activity(self) -> Activity: ...
+
+
+@runtime_checkable
+class HostControl(Protocol):
+    """The operating system's clock state and power switch."""
+    def ntp_synchronized(self) -> bool | None: ...
+
+    def poweroff(self) -> bool:
+        """Start a clean shutdown; False if it could not be started."""
         ...
