@@ -413,3 +413,250 @@ draws "Connected!" right before the calendar (one refresh fewer);
 setup instead of racing it for the panel; and `install.sh` no longer warns
 that `systemctl start` powers the Pi off. README and architecture, in both
 languages, describe the one-step flow. Tests 261 -> 283.
+
+### 2026-10-18 — Offline first-boot install on an Imager-flashed card
+
+Goal: put `develop` on an SD card already flashed with Raspberry Pi Imager
+(Pi OS Lite 2026-10-06, Trixie armhf, Python 3.13; user `admin`, SSH key, no
+Wi-Fi) so it sets itself up at power-on with no network.
+
+What the card needed that the image lacks:
+- Pillow's piwheels wheel links against 12 libraries Lite does not ship
+  (freetype, openjp2, lcms2, webp demux/mux, avif and its AV1 codecs, yuv),
+  plus `watchdog` for install.sh. Resolved with `apt-get install
+  --download-only` inside the real image rootfs, imported into Docker and run
+  under ARM emulation, so the dependency closure matches the card exactly.
+- Python wheels for `linux_armv6l` / cp313 from piwheels, all prebuilt.
+  `python3-venv`, NetworkManager and `dnsmasq-base` are already in Lite.
+
+Bundle on the boot partition (`epd-bundle/`): `app.tar` (git archive of
+develop), `debs/`, `wheels/`, `firstboot.sh`. `user-data` runcmd runs
+`firstboot.sh` (dpkg -i, venv, offline pip, `deploy/install.sh`), then
+`power_state` reboots when `/var/lib/epd-firstboot.done` exists.
+`dtparam=spi=on` set in `config.txt` directly. Dry-run in the emulated rootfs
+with `--network none` passed (venv, imports, CJK text render, idempotent rerun).
+
+Pitfalls hit, in order:
+1. **cloud-init runs once per instance.** The card had been booted before the
+   bundle was added, so the instance (`rpi-imager-…`) had already run its
+   runcmd with the original 731-byte `user-data`; later boots reuse the cache
+   and skip it. Fix: new instance id in both `meta-data` and the `ds=nocloud;i=`
+   of `cmdline.txt`.
+2. **uid 1000 is `pi` in the stock rootfs**, not the Imager user — the user
+   is passed explicitly (`EPD_USER=admin`).
+3. **QEMU reports armv7l** by default, so pip in the emulator rejects
+   armv6l wheels; armv7l copies were bundled for the dry run.
+4. **macOS writes `._*` AppleDouble files** onto FAT; removed after copying.
+5. **Docker Desktop holds the card** after a `-v` mount of it; quit Docker
+   to eject.
+6. **Logs on ext4 are unreadable from macOS** without root: `debugfs` from
+   Homebrew `e2fsprogs`, run with sudo in Terminal (the `!` prompt has no TTY
+   for sudo). `firstboot.sh` now tees its log to `/boot/firmware` too.
+
+Result: install completed in ~5 min (08:31:47 → 08:36:59 Pi clock) and the
+Pi rebooted, but no hotspot and nothing on the panel. The journal is volatile
+on Pi OS (empty `/var/log/journal`), so `epd-diag.timer` (4 min after boot,
+every 3 min) was added to copy rfkill, nmcli, iw, journals and kernel Wi-Fi
+lines to `/boot/firmware/epd-diag.log`, readable from a Mac without sudo.
+
+**Root cause: the Wi-Fi radio is off at two levels on a card with no Wi-Fi
+configured.** Pi OS leaves Wi-Fi rfkill-blocked, and NetworkManager's state
+file has `WirelessEnabled=false`, until a country is set through Imager or
+raspi-config. NetworkManager logged "Wi-Fi disabled by radio killswitch;
+disabled by state file" at start; `nmcli connection up epd-setup-ap` failed
+with "No suitable device found"; `start_hotspot` deleted the connection and
+raised, and the service exited 1 with nothing on the panel. The cloud-init
+`rfkill unblock wifi` ran ~2 min too late, and alone would not have been
+enough. Development Pis never hit this: their Wi-Fi was set up in Imager.
+
+Fix on the card: a drop-in on `epd-wifi-setup.service` with
+`ExecStartPre=-rfkill unblock wifi` and `ExecStartPre=-nmcli radio wifi on`.
+The same drop-in went into the image build. Follow-ups: the app could turn
+the radio on itself before the hotspot, and a hotspot failure should show on
+the panel instead of exiting silently.
+
+## 2026-10-19
+
+### 2026-10-19 — Ready-to-flash image and tag-driven release (PR #17)
+
+Installing on the Pi is slow (a Pi Zero spends minutes in dpkg and pip) and
+fragile (cloud-init once-per-instance). Building the image ahead of time
+removes both: the Pi installs nothing.
+
+- `image/build.sh` grows the pinned base image (`image/base.env`) by 768MB,
+  chroots in under ARM emulation, installs the Pillow libraries and
+  `watchdog`, builds `.venv` in `/opt/e-pages` owned by system user `epd`,
+  runs `deploy/install.sh` unchanged with `sudo`/`systemctl start|status`
+  stubbed, sets SPI, Wi-Fi country and an `rfkill unblock wifi` drop-in, then
+  zerofree + xz.
+- `QEMU_CPU=arm1176` makes the chroot report armv6l, so pip picks Pi Zero
+  wheels; the build fails if it does not. piwheels' armv6l wheels carry
+  `armv7l` in their `WHEEL` metadata; the binaries are ARMv6
+  (`Tag_CPU_arch: v6`), so that tag is not a problem.
+- Docker Desktop's kernel cannot mount vfat: the boot partition's
+  `config.txt`/`cmdline.txt` are copied out and back with mtools, and the
+  build fails if anything else was written there.
+- `.github/workflows/release-image.yml`: tests, then build, then
+  `gh release create` on a `v*` tag; manual runs keep an artifact. Pushing it
+  needed `gh auth refresh -s workflow`.
+- `deploy/` untouched so the branch cannot conflict with feat/one-step-setup.
+
+First local build: `e-pages-af02b93.img.xz`, 579MB. Inspected: units on
+`/opt/e-pages` as `epd`, timer/wifi-setup/watchdog enabled, build stubs and
+apt lists removed. Not yet booted on hardware; the open hotspot issue above
+may apply to it too.
+
+### 2026-10-19 — Radio on before each use of it (PR #18, fix/wifi-radio-on)
+
+The app-level fix for the root cause above, so the hotspot does not depend
+on a systemd drop-in. `NetworkManager.radio_on()` runs `rfkill unblock wifi`
+and `nmcli radio wifi on`, then waits up to 15 s for `wlan0` to leave
+`unavailable` (nmcli state < 30). It runs before every use of the radio —
+`wait_connected`, `scan`, `start_hotspot`, `resume_hotspot`, `connect` —
+because on the test card NetworkManager logged "Wi-Fi now disabled by radio
+killswitch" ~20 s after it started, one second before `epd-wifi-setup`
+began: something in Pi OS blocks Wi-Fi again partway through boot (not yet
+identified). Failures are logged, not raised. Only `nmcli.py` and its tests
+change, so the branch cannot conflict with #16. Tests 261 → 270; dropping
+the call from `start_hotspot` or skipping the wait fails 3 of the new ones.
+
+Field notes from the card, same day:
+- **What re-blocks Wi-Fi during boot is `systemd-rfkill.service`**, restoring
+  the saved state `/var/lib/systemd/rfkill/platform-20300000.mmcnr:wlan:1`.
+  Once an unblock is saved, later boots stay unblocked; until then every boot
+  starts blocked — another reason to unblock right before each use.
+- **Pulling the power loses recent writes.** The round that installed the
+  radio drop-in through cloud-init was unplugged seconds after cloud-final
+  ran: cloud-init's once-per-instance markers survived, the copied drop-in
+  did not, so the next boot skipped it. Anything written for a test must be
+  followed by `sync`.
+- The diagnostics timer, which runs a script from the boot partition every
+  boot, became the reliable way to change the card: it now installs PR #18's
+  `nmcli.py` into the app, syncs, and restarts `epd-wifi-setup`.
+
+### 2026-10-19 — Hotspot with PMF off (PR #19, fix/hotspot-pmf)
+
+With the radio on (PR #18), the hotspot failed one step later: "802.1X
+supplicant took too long to authenticate" after 25 s, preceded by
+"nl80211: kernel reports: key setting validation failed". Six variants of
+the app's hotspot were run on the Pi from a boot-partition script (Trixie,
+wpa_supplicant 2.10-24+rpt3, NetworkManager 1.52.1, kernel 6.18.50):
+
+| Variant | Result |
+|---|---|
+| App's settings | failed after 26 s |
+| PMF off | up in 8 s, seen on a phone |
+| Channel 6 | failed after 26 s |
+| PMF off + channel 6 | up in 7 s |
+| NetworkManager's security defaults | failed after 26 s |
+| Open | up in 7 s |
+
+The brcmfmac driver rejects the PMF management-frame key in AP mode; the
+channel does not matter. `start_hotspot` adds `wifi-sec.pmf disable` and
+keeps WPA2-AES. Likely a Trixie regression — the hotspot worked on hardware
+before, probably on Bookworm. #18 and #19 edit different parts of
+`nmcli.py` and merge cleanly (271 tests together). The first run of the
+experiment script failed on my argument order (`ssid` before `type wifi`);
+the second was checked against the image's real nmcli (`--offline`) first.
+
+### 2026-10-19 — Blank panel: gpiozero without lgpio
+
+With the hotspot up the panel stayed blank. `epd-wifi-setup` logged an
+`EINVAL` from gpiozero: `.venv` had no `lgpio`, so gpiozero fell back to its
+`NativeFactory`, which fails on kernel 6.18. The venv does not see system
+site-packages, so Pi OS's own `python3-lgpio` does not help; only
+`liblgpio1` (already in Lite) is needed under the piwheels wheel
+`lgpio-0.2.2.0-cp313-cp313-linux_armv6l.whl`.
+
+Installed on the card by the diagnostics script (`pip install --no-index`,
+as `admin`), then Wi-Fi setup restarted: the QR appeared. **Not fixed in the
+repo yet:** `deploy/setup.sh` installs only `spidev` and `gpiozero`, and the
+image build does the same, so a fresh install still gets a blank panel.
+
+### 2026-10-19 — iPhone could not join the hotspot: WPA-PSK only (PR #20)
+
+With the radio on (#18), PMF off (#19) and the QR on the panel, an iPhone
+still could not join: "Unable to join the network" from the QR, "Incorrect
+password" when typed. The diagnostics script turned wpa_supplicant's log up
+to debug over D-Bus (`busctl set-property … DebugLevel s debug`, keys
+hidden) and the next attempts showed:
+
+- Association, then message 1/4 and 2/4 of the handshake. **Message 2/4's
+  MIC verified**, so the password matched.
+- 0.01 s after message 3/4 was sent, the driver deleted the station
+  (`NL80211_CMD_DEL_STATION`, reason 0). Too fast for a timeout: one side
+  gave up on purpose.
+- NetworkManager's hotspot offered two AKMs, PSK and PSK-SHA256
+  (`key_mgmt_suites=0x102`; the beacon's RSN element lists `00-0f-ac:2` and
+  `:6`), although `wifi-sec.pmf` was `disable`. NetworkManager 1.52 has no
+  setting to drop the second.
+- The Zero W's brcmfmac runs the AP's SME in firmware (`device_ap_sme=1`),
+  so the beacon on air is the firmware's.
+
+Most likely the security element the firmware broadcasts does not match the
+one in message 3/4; a client must then abort (downgrade protection), and
+iOS reports that as a wrong password. That part is inferred, not captured
+on air. What settled it was an experiment from the boot partition
+(`ap-test2.sh`): NetworkManager let go of `wlan0`, and a separate
+wpa_supplicant ran a WPA2 AP with `key_mgmt=WPA-PSK` only. The iPhone joined
+at once and stayed `authorized: yes`.
+
+The fix makes the hotspot a strategy (`infrastructure/wifi/hotspot.py`),
+picked with `--hotspot`:
+
+- `wpa-supplicant` (default, `wpa_hotspot.py`): own wpa_supplicant (WPA2,
+  CCMP, WPA-PSK only, PMF off) plus dnsmasq for DHCP at the same pinned
+  `10.42.0.1`. While it runs, `wlan0` is `managed no` and the system
+  wpa_supplicant is stopped; both get it back when the hotspot goes down,
+  and it waits until NetworkManager can use `wlan0` again. Scanning and
+  joining the home network stay with NetworkManager.
+- `networkmanager`: the hotspot as before, kept for comparison.
+
+`WifiWithHotspot` has the methods `wifi_setup.run` already calls, so `run()`
+is unchanged; only `main()` builds it. The password reaches wpa_supplicant
+only as its derived PSK (PBKDF2, checked against the IEEE 802.11i test
+vector), in a 0600 file under `/run/epd-hotspot`, never on a command line.
+SIGTERM now ends Wi-Fi setup like Ctrl-C, so `systemctl stop` also hands
+`wlan0` back.
+
+Tested on the Zero W through the diagnostics script, which swapped the new
+files into the installed app: the iPhone joined, the form at `10.42.0.1`
+worked, the Pi joined the home network, calendar setup finished and events
+were drawn. After a reboot it went straight online. Pi 4 not tested yet.
+Tests 262 → 293.
+
+A conflict with #16 slipped through: an early `git merge-tree` check passed
+before the SIGTERM handler was added, and the handler then landed where #16
+adds `_stash_feeds`. Found by merging all open PRs onto `develop` in order
+and running the tests; the handler moved, no behaviour change.
+
+### 2026-10-19 — State at the end of the Pi Zero work
+
+Merged into `develop`: #16 (one-step setup), #18 (radio on), #19 (PMF off),
+#20 (WPA-PSK-only hotspot). With all of them, 326 tests pass. #17 (image
+release) is a draft and on hold. Before it is reviewed it needs a rebuild on
+the new `develop`, lgpio, and a boot on hardware.
+
+Open follow-ups:
+- **lgpio** in `deploy/setup.sh` and the image build (above).
+- **Wait for time sync before rendering.** The Pi has no RTC; until
+  timesyncd syncs, the clock resumes from
+  `/var/lib/systemd/timesync/clock` (it read 6 Oct on the 19th). The
+  calendar starts as soon as there is a network and could draw the wrong
+  day. Not seen yet; `systemd-time-wait-sync` plus `After=time-sync.target`
+  would close it.
+- **Recover `wlan0` at start-up** if Wi-Fi setup died hard (SIGKILL, crash)
+  while our hotspot held it.
+- **Skip `BOOT_WAIT`** when there are no saved Wi-Fi profiles: a fresh card
+  waits 60 s for nothing.
+- **Show a hotspot failure on the panel** instead of exiting silently.
+- **Captive portal:** answer DNS with `10.42.0.1` so the phone opens the
+  form by itself.
+- Test #20 on a Pi 4 and a Zero 2 W.
+
+Debugging this card taught a few things worth keeping. The journal is
+volatile, so a timer copied diagnostics to the FAT boot partition, readable
+from a Mac without sudo. Changes reached the Pi through that same script,
+not by hand. Every write was followed by `sync`, because the power is
+pulled at any moment. Docker must never bind-mount a file from the card,
+or it holds the card until Docker quits.
