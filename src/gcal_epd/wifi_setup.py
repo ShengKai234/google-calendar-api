@@ -173,6 +173,32 @@ def _stash_feeds(links: list[str]) -> None:
     log.info("Parked %d calendar link(s) for checking.", len(links))
 
 
+def _current_schedule():
+    """The wake-up times the form starts from; the default if unreadable.
+
+    Never fatal: this runs at boot to get the display online, and a missing
+    or broken config must not stand in the way of that.
+    """
+    from gcal_epd.domain.power_schedule import PowerSchedule
+    from gcal_epd.config import load_config, schedule_file
+    from gcal_epd.infrastructure.schedule_file import load_schedule
+
+    try:
+        return load_schedule(schedule_file(load_config()))
+    except Exception as e:
+        log.warning("Showing the default wake-up times: %s", e)
+        return PowerSchedule()
+
+
+def _save_schedule(schedule) -> None:
+    """Save the wake-up times chosen on the hotspot form."""
+    from gcal_epd.config import PROJECT_ROOT, load_config, schedule_file
+    from gcal_epd.infrastructure.schedule_file import write_schedule
+
+    # This runs as root; the forms that edit it later run as the checkout's owner.
+    write_schedule(schedule_file(load_config()), schedule, owner_of=PROJECT_ROOT)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Set up Wi-Fi through a hotspot")
     parser.add_argument("--display", action="store_true",
@@ -194,8 +220,11 @@ def main() -> None:
 
     signal.signal(signal.SIGTERM, _interrupt)
     wifi = make_wifi(NetworkManager(), args.hotspot)
+    schedule = _current_schedule()
     result = run(wifi,
-                 lambda networks: WifiSetupServer(networks, port=args.port),
+                 lambda networks: WifiSetupServer(networks, port=args.port,
+                                                  schedule=schedule,
+                                                  save_schedule=_save_schedule),
                  _make_push(args.display), stash_feeds=_stash_feeds, force=args.force)
 
     start_units(result, args.start_unit)

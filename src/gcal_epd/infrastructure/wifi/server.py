@@ -25,7 +25,14 @@ from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs
 
-from gcal_epd.infrastructure.onboarding.server import validate_feed_url
+from gcal_epd.domain.power_schedule import PowerSchedule
+from gcal_epd.infrastructure.onboarding.server import (
+    SCHEDULE_CSS,
+    SaveSchedule,
+    ScheduleFields,
+    save_schedule_safely,
+    validate_feed_url,
+)
 from gcal_epd.infrastructure.wifi.nmcli import AP_ADDRESS, Network, is_valid_psk
 
 log = logging.getLogger(__name__)
@@ -94,6 +101,7 @@ border:0;border-radius:8px;background:#2563eb;color:#fff}}
 .msg{{padding:.8rem 1rem;border-radius:8px;margin-bottom:1rem}}
 .err{{background:#fee2e2;color:#991b1b}}
 @media(prefers-color-scheme:dark){{.err{{background:#7f1d1d;color:#fecaca}}}}
+{schedule_css}
 </style></head><body>
 <h1>Wi-Fi Setup</h1>
 <p class="sub">Choose the network this display should join.</p>
@@ -114,6 +122,7 @@ border:0;border-radius:8px;background:#2563eb;color:#fff}}
  placeholder="webcal://p1-caldav.icloud.com/published/2/...">{feeds_value}</textarea>
 <small>One per line. Checked once the display is online — if one fails, the
 display shows a QR to fix it. Leave empty to keep the current calendars.</small>
+{schedule}
 <button type="submit">Connect</button>
 </form></body></html>"""
 
@@ -149,7 +158,8 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def _page(self, error: str = "", selected: str = "", other: str = "",
-              feeds: str = "", status: int = 200) -> None:
+              feeds: str = "", times: ScheduleFields | None = None,
+              status: int = 200) -> None:
         options = []
         for net in self.server.networks:
             mark = "" if net.secure else " (open)"
@@ -157,9 +167,11 @@ class _Handler(BaseHTTPRequestHandler):
             options.append(f'<option value="{escape(net.ssid)}"{sel}>'
                            f'{escape(net.ssid)}{mark}</option>')
         message = f'<div class="msg err">{escape(error)}</div>' if error else ""
+        times = times or ScheduleFields.of(self.server.schedule)
         self._send(_PAGE.format(message=message, options="".join(options),
                                 other=_OTHER, other_value=escape(other),
-                                feeds_value=escape(feeds)), status)
+                                feeds_value=escape(feeds), schedule=times.html(),
+                                schedule_css=SCHEDULE_CSS), status)
 
     def do_GET(self) -> None:
         # Any path gets the form: phones probing for a captive portal land here.
@@ -182,14 +194,25 @@ class _Handler(BaseHTTPRequestHandler):
         other = (form.get("other_ssid") or [""])[0].strip()
         password = (form.get("password") or [""])[0]
         raw_feeds = (form.get("feeds") or [""])[0]
+        times = ScheduleFields.from_form(form)
         ssid = other if choice == _OTHER else choice
 
         try:
             ssid, password = validate_credentials(ssid, password)
             feeds = parse_feed_links(raw_feeds)
+            schedule = times.to_schedule(self.server.schedule) if times else None
         except ValueError as e:
-            self._page(str(e), selected=choice, other=other, feeds=raw_feeds, status=400)
+            # The password is never sent back: it is retyped, like any login form.
+            self._page(str(e), selected=choice, other=other, feeds=raw_feeds,
+                       times=times, status=400)
             return
+
+        # Saved now, not after the join: the times do not depend on the
+        # network (or the calendar links), and a failed join reloads the
+        # form, which should show what was just chosen.
+        if schedule is not None and save_schedule_safely(self.server.save_schedule,
+                                                         schedule):
+            self.server.schedule = schedule
 
         note = (f"Then {len(feeds)} calendar link(s) will be checked and the "
                 "calendar shown." if feeds else
@@ -204,11 +227,16 @@ class _Handler(BaseHTTPRequestHandler):
 class WifiSetupServer:
     """The form, served in the background; the controller polls for a submission."""
 
-    def __init__(self, networks: list[Network], port: int = DEFAULT_PORT) -> None:
+    def __init__(self, networks: list[Network], port: int = DEFAULT_PORT,
+                 schedule: PowerSchedule | None = None,
+                 save_schedule: SaveSchedule = lambda schedule: None) -> None:
         self.port = port
         self._httpd = ThreadingHTTPServer(("0.0.0.0", port), _Handler)
         self._httpd.daemon_threads = True
         self._httpd.networks = list(networks)
+        # The wake-up times the form starts from, and where a new set goes.
+        self._httpd.schedule = schedule or PowerSchedule()
+        self._httpd.save_schedule = save_schedule
         self._httpd.error = ""
         self._httpd.pending = None
         self._httpd.lock = threading.Lock()
