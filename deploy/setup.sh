@@ -15,13 +15,13 @@ if ! grep -q "Raspberry Pi" /proc/cpuinfo 2>/dev/null; then
 fi
 
 # --- System packages ---
-echo "[1/5] Installing system dependencies..."
+echo "[1/6] Installing system dependencies..."
 sudo apt-get update -q
 sudo apt-get install -y python3-venv python3-dev
 echo "      Done."
 
 # --- SPI ---
-echo "[2/5] Checking SPI..."
+echo "[2/6] Checking SPI..."
 if ls /dev/spidev* &>/dev/null; then
     echo "      SPI already enabled."
 else
@@ -31,7 +31,7 @@ else
 fi
 
 # --- Virtual environment ---
-echo "[3/5] Setting up Python virtual environment (.venv)..."
+echo "[3/6] Setting up Python virtual environment (.venv)..."
 cd "$PROJECT_DIR"
 if [ ! -d ".venv" ]; then
     python3 -m venv .venv
@@ -41,7 +41,7 @@ else
 fi
 
 # --- Python packages ---
-echo "[4/5] Installing Python packages..."
+echo "[4/6] Installing Python packages..."
 . "$PROJECT_DIR/.venv/bin/activate"
 pip install --quiet -e .
 pip install --quiet -r "$PROJECT_DIR/requirements.txt"
@@ -55,7 +55,7 @@ fi
 echo "      Done."
 
 # --- Check calendar feeds ---
-echo "[5/5] Checking calendar feeds..."
+echo "[5/6] Checking calendar feeds..."
 if [ -f "$PROJECT_DIR/ics_feeds.toml" ]; then
     echo "      ics_feeds.toml found."
 else
@@ -65,6 +65,43 @@ else
     echo "        cp ics_feeds.example.toml ics_feeds.toml"
     echo "      Or copy your existing one from your laptop:"
     echo "        scp ics_feeds.toml admin@<pi-ip>:$PROJECT_DIR/"
+fi
+
+# --- PiSugar 3 battery (optional) ---
+# With a PiSugar 3 the Pi is off between refreshes and its RTC alarm wakes
+# it (gcal_epd.power_manager). That needs PiSugar's own daemon,
+# pisugar-server, from PiSugar's official installer (docs.pisugar.com,
+# github.com/PiSugar/pisugar-power-manager-rs). Without a PiSugar, skip it:
+# the display then simply stays on.
+echo "[6/6] PiSugar battery (optional)..."
+if dpkg -s pisugar-server &>/dev/null; then
+    echo "      pisugar-server already installed."
+elif ! grep -q "Raspberry Pi" /proc/cpuinfo 2>/dev/null || [ ! -t 0 ]; then
+    echo "      Skipped (not a Raspberry Pi, or no terminal to ask)."
+else
+    echo "      Only for a Pi powered by a PiSugar 3 battery board."
+    read -rp "      Is this Pi on a PiSugar 3, and install pisugar-server? [y/N] " pisugar
+    case "$pisugar" in
+        [Yy])
+            PISUGAR_TMP="$(mktemp -d)"
+            # Downloaded, then run: not piped into a shell. A failure here
+            # must not undo the rest of the setup, so no `set -e` exit.
+            if wget -q -O "$PISUGAR_TMP/pisugar-power-manager.sh" \
+                    https://cdn.pisugar.com/release/pisugar-power-manager.sh; then
+                echo "      PiSugar's installer asks for the model: choose \"PiSugar 3\"."
+                echo "      Leave its \"auto power on\" off: it disables the wake-up alarm."
+                if bash "$PISUGAR_TMP/pisugar-power-manager.sh" -c release; then
+                    echo "      Installed pisugar-server and pisugar-poweroff."
+                else
+                    echo "      [!] PiSugar's installer failed; the display stays always on."
+                fi
+            else
+                echo "      [!] Could not download PiSugar's installer; skipped."
+            fi
+            rm -rf "$PISUGAR_TMP" ;;
+        *)
+            echo "      Skipped. Run deploy/setup.sh again to install it later." ;;
+    esac
 fi
 
 echo ""

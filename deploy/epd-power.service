@@ -1,0 +1,34 @@
+# Template — deploy/install.sh fills in @PROJECT_DIR@, @USER@, @FEEDS_FILE@, @PENDING_FILE@ and @SCHEDULE_FILE@.
+# Install with that script; a copy made by hand will not start.
+[Unit]
+Description=e-Paper power manager (PiSugar wake-up alarm and power-off)
+# pisugar-server owns the PiSugar's I2C bus; without it this does nothing
+# and the Pi stays always on. After= only orders: no PiSugar, no problem.
+After=pisugar-server.service
+# The clock comes from the PiSugar's RTC before anything draws a date, so
+# the boot step below finishes before Wi-Fi setup and the calendar start.
+Before=epd-wifi-setup.service gcal-epd.service epd-feed-setup.service
+
+[Service]
+Type=simple
+# Root: sets the system clock, writes the gcal-epd.timer drop-in, powers off.
+User=root
+WorkingDirectory=@PROJECT_DIR@
+# Do not leave root-owned __pycache__ in the checkout owner's files.
+Environment=PYTHONDONTWRITEBYTECODE=1
+# Clock from the RTC (until NTP syncs), and the timer onto the schedule's
+# slots. "-": a failure here must not stop the power manager below.
+ExecStartPre=-@PROJECT_DIR@/.venv/bin/python -m gcal_epd.power_manager boot
+# Waits for this boot's refresh, sets the next wake-up alarm, powers off.
+# Never while someone is setting up or logged in, or while
+# /boot/firmware/epd-stay-awake exists.
+ExecStart=@PROJECT_DIR@/.venv/bin/python -m gcal_epd.power_manager run
+# Bounds the boot step, which Wi-Fi setup and the calendar wait for.
+TimeoutStartSec=60
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -41,8 +41,10 @@ PENDING_FILE="$(cd "$PROJECT_DIR" && "$PYTHON" -c \
     'from gcal_epd.config import feeds_file, load_config
 from gcal_epd.infrastructure.feeds_file import pending_feeds_path
 print(pending_feeds_path(feeds_file(load_config())))')"
+SCHEDULE_FILE="$(cd "$PROJECT_DIR" && "$PYTHON" -c \
+    'from gcal_epd.config import schedule_file, load_config; print(schedule_file(load_config()))')"
 
-for value in "$PROJECT_DIR" "$FEEDS_FILE" "$PENDING_FILE"; do
+for value in "$PROJECT_DIR" "$FEEDS_FILE" "$PENDING_FILE" "$SCHEDULE_FILE"; do
     case "$value" in
         *[[:space:]]*|*"|"*)
             echo "Error: '$value' contains a space or '|'; systemd units cannot use it as is."
@@ -55,6 +57,7 @@ echo "      User    : $RUN_USER"
 echo "      Data    : $DATA_DIR"
 echo "      Feeds   : $FEEDS_FILE"
 echo "      Pending : $PENDING_FILE"
+echo "      Schedule: $SCHEDULE_FILE"
 
 install_unit() {
     local name="$1"
@@ -65,6 +68,7 @@ install_unit() {
                     -e "s|@USER@|$RUN_USER|g" \
                     -e "s|@FEEDS_FILE@|$FEEDS_FILE|g" \
                     -e "s|@PENDING_FILE@|$PENDING_FILE|g" \
+                    -e "s|@SCHEDULE_FILE@|$SCHEDULE_FILE|g" \
                     "$PROJECT_DIR/deploy/$name")"
     if grep -q "@[A-Z_]*@" <<< "$rendered"; then
         echo "Error: deploy/$name has a placeholder this script does not fill."
@@ -80,7 +84,12 @@ install_unit "$SERVICE_NAME.timer"
 install_unit epd-wifi-setup.service
 # Not enabled on its own: epd-wifi-setup starts it at boot when no feeds exist.
 install_unit epd-feed-setup.service
-echo "      Installed $SERVICE_NAME.service/.timer, epd-wifi-setup and epd-feed-setup"
+# Power manager: with a PiSugar, wake-up alarm and power-off; without one it
+# does nothing. The path unit moves the timer when the schedule changes.
+install_unit epd-power.service
+install_unit epd-power-schedule.service
+install_unit epd-power-schedule.path
+echo "      Installed $SERVICE_NAME.service/.timer, epd-wifi-setup, epd-feed-setup and epd-power"
 # Over-the-air updates replace an installed release (RELEASE marks one);
 # a git checkout is updated with git, so it gets no update timer.
 if [ -f "$PROJECT_DIR/RELEASE" ]; then
@@ -106,6 +115,12 @@ if [ "$UPDATES" = yes ]; then
     sudo systemctl enable epd-update.timer
     sudo systemctl start  epd-update.timer
 fi
+# Runs at the next boot: RTC clock, then power-off after the refresh (PiSugar only).
+sudo systemctl enable epd-power.service
+sudo systemctl enable --now epd-power-schedule.path
+# The timer follows the power schedule's times from now on, not just after a boot.
+(cd "$PROJECT_DIR" && sudo env PYTHONDONTWRITEBYTECODE=1 "$PYTHON" -m gcal_epd.power_manager apply-schedule) \
+    || echo "      Warning: could not apply the power schedule to $SERVICE_NAME.timer"
 
 # --- Enable hardware watchdog ---
 echo "[4/4] Enabling hardware watchdog..."
@@ -137,6 +152,9 @@ echo "  Manual run  : .venv/bin/python -m gcal_epd.main --display"
 echo "                or: sudo systemctl start $SERVICE_NAME.service"
 echo "  View logs   : journalctl -u $SERVICE_NAME.service -n 50"
 echo "  Disable     : sudo systemctl disable $SERVICE_NAME.timer"
+echo "  Power status: $PYTHON -m gcal_epd.power_manager status"
+echo "  Stay awake  : create an empty file epd-stay-awake on the boot partition"
+echo "                (/boot/firmware/epd-stay-awake); the PiSugar then never powers the Pi off."
 echo "  Change Wi-Fi: sudo systemd-run --working-directory=$PROJECT_DIR \\"
 echo "                  $PROJECT_DIR/.venv/bin/python -m gcal_epd.wifi_setup --display --force \\"
 echo "                  --start-unit gcal-epd.service --start-unit epd-feed-setup.service"
