@@ -132,6 +132,12 @@ def _make_push(display: bool) -> Push:
     return push
 
 
+def _interrupt(signum, frame) -> None:
+    """End on `systemctl stop` (SIGTERM) as on Ctrl-C, so the hotspot is taken
+    down and wlan0 is handed back to NetworkManager."""
+    raise KeyboardInterrupt
+
+
 def start_units(result: str, units: list[str], run=subprocess.run) -> None:
     """Hand over to the calendar once there is a network, however it came.
 
@@ -145,12 +151,6 @@ def start_units(result: str, units: list[str], run=subprocess.run) -> None:
         # --no-block: these units are ordered after this one, so waiting
         # for them here would deadlock.
         run(["systemctl", "start", "--no-block", unit], check=False)
-
-
-def _interrupt(signum, frame) -> None:
-    """End on `systemctl stop` (SIGTERM) as on Ctrl-C, so the hotspot is taken
-    down and wlan0 is handed back to NetworkManager."""
-    raise KeyboardInterrupt
 
 
 def main() -> None:
