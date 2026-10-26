@@ -24,7 +24,9 @@ PI_REQUIREMENTS = "requirements-pi.txt"
 DEVICE_MODEL = Path("/proc/device-tree/model")
 # What must import for the calendar and the Wi-Fi setup to work at all.
 SMOKE_IMPORTS = ["gcal_epd.main", "gcal_epd.wifi_setup", "PIL._imagingft", "qrcode"]
-PI_SMOKE_IMPORTS = ["spidev", "gpiozero", "lgpio"]
+# Not lgpio: importing it already makes its pipes, so it only works after
+# use_writable_lgpio_dir(), as the app does it. PI_GPIO_CHECK covers it.
+PI_SMOKE_IMPORTS = ["spidev", "gpiozero"]
 # Opening the GPIO chip claims no pin, so it is safe while the panel is
 # idle; it fails where the driver would (no writable dir for lgpio's pipes).
 PI_GPIO_CHECK = ("import gcal_epd.epd as e; e.use_writable_lgpio_dir(); import lgpio; "
