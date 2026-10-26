@@ -3,7 +3,8 @@ set -e
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SERVICE_NAME="gcal-epd"
-# --yes: no questions (the release installer and first-boot scripts run this).
+# --yes: ask nothing, and do not offer to reboot at the end, for callers
+# with no one at the keyboard (gcal_epd.releases, the first-boot script).
 ASSUME_YES=no
 [ "${1:-}" = "--yes" ] && ASSUME_YES=yes
 
