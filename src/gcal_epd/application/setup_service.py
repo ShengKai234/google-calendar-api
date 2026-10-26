@@ -9,9 +9,10 @@ The setup counterpart of display_service, which does the routine refresh.
 import logging
 from pathlib import Path
 
-from gcal_epd.config import feeds_file, font_path
+from gcal_epd.config import feeds_file, font_path, schedule_file
 from gcal_epd.infrastructure.feeds_file import load_feeds, write_feeds_file
 from gcal_epd.infrastructure.onboarding.server import FeedSetupServer, check_feed
+from gcal_epd.infrastructure.schedule_file import TomlScheduleStore
 
 log = logging.getLogger(__name__)
 
@@ -21,7 +22,11 @@ def run_onboarding(config: dict, push_display: bool, error: str = "") -> bool:
 
     `error` says why setup reopened; it is shown on the panel and the form.
     """
-    server = FeedSetupServer(feeds_file(config), notice=error)
+    server = FeedSetupServer(
+        feeds_file(config), notice=error,
+        # Runs as the checkout's owner, so the file is already theirs.
+        schedule_store=TomlScheduleStore(schedule_file(config)),
+    )
 
     log.info("")
     log.info("  Calendar setup — open this on your phone:")

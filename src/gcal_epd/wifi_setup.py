@@ -172,6 +172,24 @@ def _stash_feeds(links: list[str]) -> None:
     log.info("Parked %d calendar link(s) for checking.", len(links))
 
 
+def _schedule_store():
+    """Where the hotspot form keeps the wake-up times.
+
+    Never fatal: this runs at boot to get the display online, so a missing
+    or broken config.toml gives a store that keeps them in memory only.
+    """
+    from gcal_epd.config import PROJECT_ROOT, load_config, schedule_file
+    from gcal_epd.infrastructure.schedule_file import InMemoryScheduleStore, TomlScheduleStore
+
+    try:
+        path = schedule_file(load_config())
+    except Exception as e:
+        log.warning("Wake-up times will not be saved: %s", e)
+        return InMemoryScheduleStore()
+    # This runs as root; the forms that edit it later run as the checkout's owner.
+    return TomlScheduleStore(path, owner_of=PROJECT_ROOT)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Set up Wi-Fi through a hotspot")
     parser.add_argument("--display", action="store_true",
@@ -193,8 +211,10 @@ def main() -> None:
 
     signal.signal(signal.SIGTERM, _interrupt)
     wifi = make_wifi(NetworkManager(), args.hotspot)
+    schedule_store = _schedule_store()
     result = run(wifi,
-                 lambda networks: WifiSetupServer(networks, port=args.port),
+                 lambda networks: WifiSetupServer(networks, port=args.port,
+                                                  schedule_store=schedule_store),
                  _make_push(args.display), stash_feeds=_stash_feeds, force=args.force)
 
     start_units(result, args.start_unit)
