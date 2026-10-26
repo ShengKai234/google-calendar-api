@@ -101,6 +101,8 @@ flowchart LR
 
 `@PROJECT_DIR@` 是程式所在的資料夾，`@USER@` 是擁有這個資料夾的使用者。`@FEEDS_FILE@` 和 `@PENDING_FILE@` 則直接問程式本身，所以 unit 和 `config.toml` 不可能對不上。路徑含空白，或有沒填到的佔位符，`install.sh` 都會拒絕安裝。
 
+`config.py` 有兩個根目錄：`PROJECT_ROOT` 是程式（隨附的 `config.toml`、字型、`vendor/`），`DATA_DIR` 是這台機器自己的檔案（日曆網址、暫存的連結、`config.local.toml`、預覽圖）。在 checkout 裡兩者是同一個資料夾。由 `gcal_epd.releases` 安裝的 release 位在 `/opt/e-pages/releases/<版本>`（裡面有 `RELEASE` 檔），資料放在 `/opt/e-pages/data`；這時 unit 的 `@PROJECT_DIR@` 是 `/opt/e-pages/current`，一個從一個完整 release 原子切換到下一個的連結。因為 release 的程式屬於 root，`@USER@` 改為 `DATA_DIR` 的擁有者。
+
 ---
 
 ## 執行架構：systemd unit

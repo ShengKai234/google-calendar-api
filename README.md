@@ -188,6 +188,17 @@ font_path = "assets/fonts/NotoSansCJKtc-Regular.otf"
 Relative paths are taken from the checkout. If you change `feeds_file`,
 re-run `bash deploy/install.sh` so the units watch the new file.
 
+To change a setting on one display only (another city, say), put just that
+setting in `config.local.toml` next to the feeds file; it is laid over
+`config.toml` and is not tracked. Tables merge key by key; a list such as
+`[[sources]]` replaces the shipped one whole. An update can then change the
+defaults without overwriting your changes.
+
+The feeds file, `config.local.toml` and the preview are this display's
+*data*. In a git checkout they sit in the checkout. In an installed release
+(see [Install as a release](#install-as-a-release)) they sit in
+`/opt/e-pages/data/`, apart from the code, so an update never touches them.
+
 ---
 
 ## Schedule
@@ -234,6 +245,37 @@ systemctl list-timers gcal-epd.timer      # next scheduled run
 ```bash
 git pull
 bash deploy/install.sh
+```
+
+### Install as a release
+
+The over-the-air updates being built install the app as *releases*, side by
+side, with an atomic switch and a way back:
+
+```
+/opt/e-pages/releases/<version>/   code and its own .venv (root-owned)
+/opt/e-pages/current  -> releases/<version>   what the units run
+/opt/e-pages/previous -> releases/<version>   what rollback returns to
+/opt/e-pages/data/                 feeds, config.local.toml, preview
+```
+
+To move a display from its checkout to this layout, on the Pi:
+
+```bash
+cd ~/google-calendar-api && git pull
+bash deploy/install-release.sh --migrate-from ~/google-calendar-api
+```
+
+It installs the checkout's committed `HEAD` (never uncommitted edits or
+gitignored files), builds its venv, and switches only once the new release
+imports and reports its version; then it points the units at
+`/opt/e-pages/current`. The feeds file and other settings are copied
+(not moved) into `data/`; the old checkout is left as it was.
+
+```bash
+sudo python3 -m gcal_epd.releases list        # with PYTHONPATH=src, from a checkout
+sudo python3 -m gcal_epd.releases rollback    # back to the previous release
+sudo python3 -m gcal_epd.releases switch 0.2.0
 ```
 
 ### Update dependencies
@@ -290,7 +332,9 @@ google-calendar-api/
 ├── src/gcal_epd/
 │   ├── main.py              # Entry: calendar refresh and setup (python -m gcal_epd.main)
 │   ├── wifi_setup.py        # Entry: Wi-Fi hotspot setup, runs at boot as root
-│   ├── config.py            # Project root, config.toml, path helpers
+│   ├── releases.py          # Entry: install / switch / roll back releases (root)
+│   ├── config.py            # Code and data roots, config.toml (+ local), path helpers
+│   ├── version.py           # Which version is running
 │   ├── domain/              # CalendarEvent / WeatherInfo + repository Protocols
 │   ├── application/
 │   │   ├── display_service.py  # Fetch → render → panel
@@ -300,12 +344,13 @@ google-calendar-api/
 │   │   ├── ics/             # iCalendar feed repository
 │   │   ├── open_meteo/      # Weather repository
 │   │   ├── onboarding/      # Calendar setup web form (LAN, PIN)
+│   │   ├── release/         # Release layout, build, migration from a checkout
 │   │   └── wifi/            # NetworkManager wrapper + hotspot web form
 │   ├── render/              # layout.py, draw.py, wifi_screens.py
 │   └── epd.py               # Push an image to the panel
 ├── vendor/waveshare_epd/    # Waveshare driver
 ├── assets/fonts/            # NotoSansCJKtc-Regular.otf
-├── deploy/                  # setup.sh, install.sh, systemd unit templates
+├── deploy/                  # setup.sh, install.sh, install-release.sh, unit templates
 ├── docs/                    # Architecture
 ├── tests/
 ├── config.toml              # Runtime configuration (tracked)
