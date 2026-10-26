@@ -184,11 +184,26 @@ def test_venv_off_the_pi_skips_the_panel_driver(tmp_path):
 def test_smoke_test_imports_the_app_and_checks_its_name(tmp_path):
     release, run = _release(tmp_path), FakeRun(stdout="gcal-epd 0.2.0\n")
     installer.smoke_test(release, "0.2.0", tmp_path / "data", on_pi=True, run=run)
-    (imports, kw), (version, _) = run.calls
+    (imports, kw), (gpio, _), (version, _) = run.calls
     assert "gcal_epd.main" in imports[-1] and "spidev" in imports[-1]
+    assert "use_writable_lgpio_dir" in gpio[-1] and "gpiochip_open" in gpio[-1]
     assert kw["env"]["EPD_DATA_DIR"] == str(tmp_path / "data")
     assert kw["cwd"] == release
     assert version[-3:] == ["-m", "gcal_epd.main", "--version"]
+
+
+def test_smoke_test_off_the_pi_skips_the_gpio_check(tmp_path):
+    release, run = _release(tmp_path), FakeRun(stdout="gcal-epd 0.2.0\n")
+    installer.smoke_test(release, "0.2.0", tmp_path, on_pi=False, run=run)
+    assert len(run.calls) == 2
+
+
+def test_smoke_test_runs_as_the_app_user_when_root(tmp_path, monkeypatch):
+    """As root, the read-only code directory that broke lgpio went unnoticed."""
+    monkeypatch.setattr(installer.os, "geteuid", lambda: 0)
+    release, run = _release(tmp_path), FakeRun(stdout="gcal-epd 0.2.0\n")
+    installer.smoke_test(release, "0.2.0", tmp_path, on_pi=True, run=run, user="admin")
+    assert all(cmd[:4] == ["runuser", "-u", "admin", "--"] for cmd, _ in run.calls)
 
 
 def test_smoke_test_fails_on_the_wrong_name(tmp_path):

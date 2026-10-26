@@ -25,6 +25,10 @@ DEVICE_MODEL = Path("/proc/device-tree/model")
 # What must import for the calendar and the Wi-Fi setup to work at all.
 SMOKE_IMPORTS = ["gcal_epd.main", "gcal_epd.wifi_setup", "PIL._imagingft", "qrcode"]
 PI_SMOKE_IMPORTS = ["spidev", "gpiozero", "lgpio"]
+# Opening the GPIO chip claims no pin, so it is safe while the panel is
+# idle; it fails where the driver would (no writable dir for lgpio's pipes).
+PI_GPIO_CHECK = ("import gcal_epd.epd as e; e.use_writable_lgpio_dir(); import lgpio; "
+                 "lgpio.gpiochip_close(lgpio.gpiochip_open(0))")
 
 Run = Callable[..., subprocess.CompletedProcess]
 # The installer itself runs with PYTHONPATH at the source's src/. Passed on,
@@ -186,12 +190,23 @@ def build_venv(release: Path, wheels: Path | None, on_pi: bool, run: Run = run,
          str(release / "src"), str(release / "vendor")])
 
 
-def smoke_test(release: Path, label: str, data: Path, on_pi: bool, run: Run = run) -> None:
-    """The new release imports and names itself; nothing touches the panel."""
+def smoke_test(release: Path, label: str, data: Path, on_pi: bool, run: Run = run,
+               user: str | None = None) -> None:
+    """The new release imports and names itself, and on a Pi can open the
+    GPIO chip; nothing is drawn on the panel.
+
+    Run as `user` (the app's), in the release directory, as the units run
+    it: as root, a read-only code directory or a missing permission would
+    go unnoticed.
+    """
     python = str(release / ".venv" / "bin" / "python")
-    env = {"EPD_DATA_DIR": str(data), "PATH": "/usr/bin:/bin"}
+    env = {"EPD_DATA_DIR": str(data), "PATH": "/usr/sbin:/usr/bin:/sbin:/bin"}
+    as_user = ["runuser", "-u", user, "--"] if user and os.geteuid() == 0 else []
     imports = SMOKE_IMPORTS + (PI_SMOKE_IMPORTS if on_pi else [])
-    run([python, "-c", "import " + ", ".join(imports)], cwd=release, env=env)
-    out = run([python, "-m", "gcal_epd.main", "--version"], cwd=release, env=env).stdout
+    run(as_user + [python, "-c", "import " + ", ".join(imports)], cwd=release, env=env)
+    if on_pi:
+        run(as_user + [python, "-c", PI_GPIO_CHECK], cwd=release, env=env)
+    out = run(as_user + [python, "-m", "gcal_epd.main", "--version"],
+              cwd=release, env=env).stdout
     if out.strip() != f"gcal-epd {label}":
         raise InstallError(f"The new release reports {out.strip()!r}, not {label}.")

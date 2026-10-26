@@ -77,7 +77,7 @@ def install(args, layout: ReleaseLayout, run=installer.run) -> str:
             layout.begin(label)
             source.extract(release, run)
             installer.build_venv(release, wheels, on_pi, run)
-            installer.smoke_test(release, label, layout.data, on_pi, run)
+            installer.smoke_test(release, label, layout.data, on_pi, run, user=user)
             layout.finish(label)
 
         if args.migrate_from:
