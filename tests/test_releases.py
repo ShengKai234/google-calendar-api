@@ -137,3 +137,21 @@ def test_cli_switch_rollback_and_list(repo, tmp_path, capsys):
 def test_cli_reports_errors_without_a_traceback(tmp_path):
     assert releases.main(["--base", str(tmp_path), "switch", "9.9.9"]) == 1
     assert releases.main(["--base", str(tmp_path), "rollback"]) == 1
+
+
+def test_units_are_pointed_without_the_installers_pythonpath(repo, tmp_path, monkeypatch):
+    """install.sh asks the release's python for the data dir; a PYTHONPATH
+    at the source's src/ once made it answer for the source instead."""
+    monkeypatch.setenv("PYTHONPATH", str(repo / "src"))
+    layout = ReleaseLayout(tmp_path / "e-pages")
+    envs = []
+
+    class Recording(FakeRun):
+        def __call__(self, cmd, **kwargs):
+            if cmd[0] == "bash":
+                envs.append(kwargs["env"])
+            return super().__call__(cmd, **kwargs)
+
+    releases.install(_args(repo), layout, Recording(layout))
+    assert "PYTHONPATH" not in envs[0]
+    assert envs[0]["EPD_USER"] == getpass.getuser()

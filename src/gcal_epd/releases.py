@@ -91,7 +91,7 @@ def install(args, layout: ReleaseLayout, run=installer.run) -> str:
         if not args.no_units:
             log.info("Pointing the systemd units at %s...", layout.current_link)
             run(["bash", str(layout.current_link / "deploy" / "install.sh"), "--yes"],
-                env={**os.environ, "EPD_USER": user})
+                env=installer.child_env({"EPD_USER": user}))
         removed = layout.prune(KEEP)
         if removed:
             log.info("Removed old releases: %s", ", ".join(removed))

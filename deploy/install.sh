@@ -7,6 +7,9 @@ SERVICE_NAME="gcal-epd"
 # with no one at the keyboard (gcal_epd.releases, the first-boot script).
 ASSUME_YES=no
 [ "${1:-}" = "--yes" ] && ASSUME_YES=yes
+# The paths below are asked of this directory's own app; an inherited
+# PYTHONPATH would make python answer for some other copy of it.
+unset PYTHONPATH PYTHONHOME
 
 echo "=== gcal-epd deploy ==="
 echo "Project: $PROJECT_DIR"

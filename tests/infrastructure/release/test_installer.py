@@ -222,3 +222,17 @@ def test_pi_requirements_are_pinned():
              if l and not l.startswith("#")]
     assert {l.split("==")[0] for l in lines} >= {"spidev", "gpiozero", "lgpio"}
     assert all("==" in l for l in lines)
+
+
+def test_commands_do_not_inherit_pythonpath(monkeypatch):
+    monkeypatch.setenv("PYTHONPATH", "/somewhere/src")
+    monkeypatch.setenv("PYTHONHOME", "/somewhere")
+    out = installer.run(["/bin/sh", "-c", 'echo "${PYTHONPATH-unset} ${PYTHONHOME-unset}"']).stdout
+    assert out.strip() == "unset unset"
+    assert installer.child_env({"A": "1"})["A"] == "1"
+
+
+def test_install_sh_ignores_an_inherited_pythonpath():
+    script = (Path(__file__).parents[3] / "deploy" / "install.sh").read_text()
+    unset = script.index("unset PYTHONPATH PYTHONHOME")
+    assert unset < script.index('"$PYTHON" -c')

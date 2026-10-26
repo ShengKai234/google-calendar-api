@@ -9,6 +9,7 @@ Standard library only: it runs under the system python3, before any venv.
 """
 import io
 import logging
+import os
 import subprocess
 import tarfile
 import tomllib
@@ -26,14 +27,28 @@ SMOKE_IMPORTS = ["gcal_epd.main", "gcal_epd.wifi_setup", "PIL._imagingft", "qrco
 PI_SMOKE_IMPORTS = ["spidev", "gpiozero", "lgpio"]
 
 Run = Callable[..., subprocess.CompletedProcess]
+# The installer itself runs with PYTHONPATH at the source's src/. Passed on,
+# it would make the new release's python import that copy instead of its
+# own: install.sh would then ask the wrong copy where the data lives.
+FOREIGN_PYTHON_ENV = ("PYTHONPATH", "PYTHONHOME")
 
 
 class InstallError(RuntimeError):
     """A step of building the release failed; the release is not usable."""
 
 
+def child_env(extra: dict | None = None) -> dict:
+    """This process's environment, minus what points Python at another copy."""
+    env = {k: v for k, v in os.environ.items() if k not in FOREIGN_PYTHON_ENV}
+    return {**env, **(extra or {})}
+
+
 def run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
-    """subprocess.run that raises InstallError with the command's own output."""
+    """subprocess.run that raises InstallError with the command's own output.
+
+    Without an explicit env, the child gets child_env().
+    """
+    kwargs.setdefault("env", child_env())
     try:
         return subprocess.run(cmd, check=True, capture_output=True, text=True, **kwargs)
     except subprocess.CalledProcessError as e:
