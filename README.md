@@ -328,3 +328,7 @@ Documentation exists in English and Traditional Chinese. English is the
 source; when you change a section, change the same section in the
 `.zh-TW.md` file. A test checks the two keep the same headings and
 diagrams.
+
+CI (`.github/workflows/ci.yml`) runs the same `pytest -q` on Python 3.11
+(dev) and 3.13 (the Pi) for every pull request, and shellchecks
+`deploy/*.sh`.
