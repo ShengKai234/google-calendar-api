@@ -17,6 +17,7 @@ from gcal_epd.config import DATA_DIR, DEFAULT_FEEDS_FILE, PROJECT_ROOT, feeds_fi
 from gcal_epd.infrastructure.feeds_file import load_feeds, pending_feeds_path, reset_feeds
 from gcal_epd.infrastructure.ics.repository import ICSRepository
 from gcal_epd.infrastructure.open_meteo.repository import OpenMeteoRepository
+from gcal_epd.version import version
 
 log = logging.getLogger(__name__)
 
@@ -75,6 +76,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Fetch calendar feeds and render to e-ink display"
     )
+    parser.add_argument("--version", action="version", version=f"gcal-epd {version()}")
     parser.add_argument(
         "--display",
         action="store_true",
@@ -105,6 +107,7 @@ def main() -> None:
     # Configured here, not at import, so importing this module (tests, tools)
     # never changes the importer's logging.
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    log.info("gcal-epd %s", version())
     config = load_config()
 
     if args.reset and not _confirm_reset(config, assume_yes=args.yes):
