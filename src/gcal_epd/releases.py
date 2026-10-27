@@ -6,13 +6,16 @@ Run as root, with the system python3 and the source's src/ on the path
 
     install --source DIR|TAR [--user U] [--wheels DIR] [--migrate-from DIR]
     list
-    switch VERSION
-    rollback
+    switch VERSION [--user U]
+    rollback [--user U]
     prune [--keep N]
 
 `install` builds the new release beside the running one (see
 infrastructure/release/), switches `current` to it only once it imports
 and names itself, then points the systemd units at /opt/e-pages/current.
+`switch` and `rollback` reinstall the units too, from the release they
+switch to: releases may ship different units, and the running ones must
+be the ones that release expects.
 Standard library only, so it runs before any venv exists.
 """
 import argparse
@@ -47,10 +50,17 @@ def _app_user(args, layout: ReleaseLayout) -> str:
     """--user, else whoever owns the old checkout or the data directory."""
     if args.user:
         return args.user
-    for path in (args.migrate_from, layout.data):
+    for path in (getattr(args, "migrate_from", None), layout.data):
         if path and Path(path).exists():
             return pwd.getpwuid(Path(path).stat().st_uid).pw_name
     raise InstallError("Say which user runs the app: --user NAME.")
+
+
+def _install_units(layout: ReleaseLayout, user: str, run=installer.run) -> None:
+    """(Re)install the systemd units with the current release's install.sh."""
+    log.info("Pointing the systemd units at %s...", layout.current_link)
+    run(["bash", str(layout.current_link / "deploy" / "install.sh"), "--yes"],
+        env=installer.child_env({"EPD_USER": user}))
 
 
 def install(args, layout: ReleaseLayout, run=installer.run) -> str:
@@ -89,12 +99,28 @@ def install(args, layout: ReleaseLayout, run=installer.run) -> str:
         log.info("Now running %s%s.", label, f" (was {old})" if old else "")
 
         if not args.no_units:
-            log.info("Pointing the systemd units at %s...", layout.current_link)
-            run(["bash", str(layout.current_link / "deploy" / "install.sh"), "--yes"],
-                env=installer.child_env({"EPD_USER": user}))
+            _install_units(layout, user, run)
         removed = layout.prune(KEEP)
         if removed:
             log.info("Removed old releases: %s", ", ".join(removed))
+    return label
+
+
+def switch(args, layout: ReleaseLayout, run=installer.run) -> str:
+    """Make args.version (or, with args.version None, the previous release)
+    current, then reinstall the units from it. Returns what is current."""
+    user = None if args.no_units else _app_user(args, layout)
+    if user:
+        _owner(user)   # an unknown user fails here, before anything changes
+    with layout.locked():
+        if args.version is None:
+            label = layout.rollback()
+        else:
+            label = args.version
+            layout.switch(label)
+        log.info("Now running %s; it takes effect at the next refresh or boot.", label)
+        if user:
+            _install_units(layout, user, run)
     return label
 
 
@@ -123,7 +149,12 @@ def main(argv=None) -> int:
     sub.add_parser("list", help="Installed releases")
     p = sub.add_parser("switch", help="Run another installed release")
     p.add_argument("version")
-    sub.add_parser("rollback", help="Go back to the previous release")
+    rollback = sub.add_parser("rollback", help="Go back to the previous release")
+    for p in (p, rollback):
+        p.add_argument("--user", help="The user the app runs as (default: owner of "
+                                      "the data directory)")
+        p.add_argument("--no-units", action="store_true",
+                       help="Do not reinstall the systemd units")
     p = sub.add_parser("prune", help="Remove old and unfinished releases")
     p.add_argument("--keep", type=int, default=KEEP)
     args = parser.parse_args(argv)
@@ -136,13 +167,10 @@ def main(argv=None) -> int:
         elif args.command == "list":
             _list(layout)
         elif args.command == "switch":
-            with layout.locked():
-                layout.switch(args.version)
-            log.info("Now running %s; it takes effect at the next refresh or boot.",
-                     args.version)
+            switch(args, layout)
         elif args.command == "rollback":
-            with layout.locked():
-                log.info("Back to %s.", layout.rollback())
+            args.version = None
+            switch(args, layout)
         elif args.command == "prune":
             with layout.locked():
                 removed = layout.prune(args.keep)

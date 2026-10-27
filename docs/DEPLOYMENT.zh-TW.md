@@ -236,7 +236,7 @@ $P switch 0.2.0         # 切到任一已安裝的版本
 $P prune                # 刪除舊的和未完成的版本
 ```
 
-切換在下次刷新或開機時生效。還在用 git checkout 執行的裝置，用 `bash deploy/install-release.sh --migrate-from ~/google-calendar-api` 搬到這個結構一次即可。
+`switch` 和 `rollback` 也會用切換過去那個版本的檔案重新安裝 systemd units，讓 units 和程式碼永遠一致。切換在下次刷新或開機時生效。還在用 git checkout 執行的裝置，用 `bash deploy/install-release.sh --migrate-from ~/google-calendar-api` 搬到這個結構一次即可。
 
 ---
 

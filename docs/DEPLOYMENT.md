@@ -287,7 +287,9 @@ $P switch 0.2.0         # any installed release
 $P prune                # remove old and unfinished releases
 ```
 
-A switch takes effect at the next refresh or boot. A display that still
+`switch` and `rollback` also reinstall the systemd units from the release
+they switch to, so the units always match the code. A switch takes effect
+at the next refresh or boot. A display that still
 runs from a git checkout moves to this layout once, with
 `bash deploy/install-release.sh --migrate-from ~/google-calendar-api`.
 
