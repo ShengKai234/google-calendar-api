@@ -1,0 +1,4 @@
+# Build-time packages: what pip needs to install the app itself
+# (pyproject.toml [build-system]). Bundled with the wheels, so the Pi
+# can install a release with no network.
+setuptools==84.2.1
