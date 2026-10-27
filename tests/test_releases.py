@@ -126,11 +126,11 @@ def test_cli_switch_rollback_and_list(repo, tmp_path, capsys):
         layout.begin(label)
         layout.finish(label)
     base = ["--base", str(layout.base)]
-    assert releases.main(base + ["switch", "0.2.0"]) == 0
-    assert releases.main(base + ["switch", "0.3.0"]) == 0
+    assert releases.main(base + ["switch", "0.2.0", "--no-units"]) == 0
+    assert releases.main(base + ["switch", "0.3.0", "--no-units"]) == 0
     assert releases.main(base + ["list"]) == 0
     assert capsys.readouterr().out.splitlines() == ["0.2.0 (previous)", "0.3.0 (current)"]
-    assert releases.main(base + ["rollback"]) == 0
+    assert releases.main(base + ["rollback", "--no-units"]) == 0
     assert layout.current() == "0.2.0"
 
 
@@ -155,3 +155,72 @@ def test_units_are_pointed_without_the_installers_pythonpath(repo, tmp_path, mon
     releases.install(_args(repo), layout, Recording(layout))
     assert "PYTHONPATH" not in envs[0]
     assert envs[0]["EPD_USER"] == getpass.getuser()
+
+
+# --- switch and rollback: the units come from the release switched to ------
+
+def _two_releases(tmp_path):
+    layout = ReleaseLayout(tmp_path / "e-pages")
+    for label in ("0.2.0", "0.3.0"):
+        layout.begin(label)
+        layout.finish(label)
+    layout.data.mkdir()
+    layout.switch("0.2.0")
+    layout.switch("0.3.0")
+    return layout
+
+
+def _switch_args(version, **kw):
+    return SimpleNamespace(**{**dict(version=version, user=None, no_units=False), **kw})
+
+
+def _units_runs(run):
+    return [c for c in run.commands if c[0] == "bash"]
+
+
+def test_switch_reinstalls_the_units_of_the_release_switched_to(tmp_path):
+    layout = _two_releases(tmp_path)
+    envs = []
+
+    class Recording(FakeRun):
+        def __call__(self, cmd, **kwargs):
+            if cmd[0] == "bash":
+                # Which release `current` names when install.sh runs.
+                envs.append((layout.current(), kwargs["env"]["EPD_USER"]))
+            return super().__call__(cmd, **kwargs)
+
+    run = Recording(layout)
+    assert releases.switch(_switch_args("0.2.0"), layout, run) == "0.2.0"
+    assert _units_runs(run) == [["bash", str(layout.current_link / "deploy" / "install.sh"),
+                                 "--yes"]]
+    # The data directory's owner runs the app, unless --user says otherwise.
+    assert envs == [("0.2.0", getpass.getuser())]
+
+
+def test_rollback_reinstalls_the_units_of_the_previous_release(tmp_path):
+    layout = _two_releases(tmp_path)
+    seen = []
+
+    class Recording(FakeRun):
+        def __call__(self, cmd, **kwargs):
+            seen.append(layout.current())
+            return super().__call__(cmd, **kwargs)
+
+    assert releases.switch(_switch_args(None), layout, Recording(layout)) == "0.2.0"
+    assert seen == ["0.2.0"]
+
+
+def test_switch_to_an_unknown_user_changes_nothing(tmp_path):
+    layout = _two_releases(tmp_path)
+    with pytest.raises(InstallError, match="no user"):
+        releases.switch(_switch_args("0.2.0", user="no-such-user-xyz"), layout,
+                        FakeRun(layout))
+    assert layout.current() == "0.3.0"
+
+
+def test_switch_without_units_runs_nothing(tmp_path):
+    layout = _two_releases(tmp_path)
+    run = FakeRun(layout)
+    releases.switch(_switch_args("0.2.0", no_units=True), layout, run)
+    assert layout.current() == "0.2.0"
+    assert run.commands == []
