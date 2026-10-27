@@ -45,6 +45,12 @@ the way it is, is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Setting up a new display
 
+The quickest way needs no network on the Pi: write the card with Imager,
+then `bash deploy/sdcard/prepare.sh --release vX.Y.Z` adds the calendar to it,
+and the first boot installs it. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md),
+which also covers publishing and installing releases. The steps below set
+up a display from a git checkout instead, for development.
+
 ### 1. Flash the SD card
 
 Use [Raspberry Pi Imager](https://www.raspberrypi.com/software/): choose your
@@ -333,6 +339,7 @@ google-calendar-api/
 │   ├── main.py              # Entry: calendar refresh and setup (python -m gcal_epd.main)
 │   ├── wifi_setup.py        # Entry: Wi-Fi hotspot setup, runs at boot as root
 │   ├── releases.py          # Entry: install / switch / roll back releases (root)
+│   ├── build_release.py     # Entry: build a release's published files (Mac / CI)
 │   ├── config.py            # Code and data roots, config.toml (+ local), path helpers
 │   ├── version.py           # Which version is running
 │   ├── domain/              # CalendarEvent / WeatherInfo + repository Protocols
@@ -351,7 +358,9 @@ google-calendar-api/
 ├── vendor/waveshare_epd/    # Waveshare driver
 ├── assets/fonts/            # NotoSansCJKtc-Regular.otf
 ├── deploy/                  # setup.sh, install.sh, install-release.sh, unit templates
-├── docs/                    # Architecture
+│   ├── sdcard/              # prepare.sh (Mac), firstboot.sh (Pi), debs.lock
+│   └── release/             # sign.sh, allowed_signers
+├── docs/                    # Architecture, deployment
 ├── tests/
 ├── config.toml              # Runtime configuration (tracked)
 ├── ics_feeds.example.toml   # Template for ics_feeds.toml (gitignored — secret)
@@ -376,4 +385,5 @@ diagrams.
 
 CI (`.github/workflows/ci.yml`) runs the same `pytest -q` on Python 3.11
 (dev) and 3.13 (the Pi) for every pull request, and shellchecks
-`deploy/*.sh`.
+`deploy/*.sh` and `deploy/*/*.sh`. A `vX.Y.Z` tag runs
+`.github/workflows/release.yml`; see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).

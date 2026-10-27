@@ -38,6 +38,8 @@ flowchart TB
 
 ## 設定一台新機器
 
+最快的方式不需要 Pi 連網：用 Imager 寫入 SD 卡，再執行 `bash deploy/sdcard/prepare.sh --release vX.Y.Z` 把日曆加到卡上，首次開機就會自動安裝。詳見 [docs/DEPLOYMENT.zh-TW.md](docs/DEPLOYMENT.zh-TW.md)，裡面也說明如何發布與安裝 release。下面的步驟則是從 git checkout 設定，適合開發用。
+
 ### 1. 燒錄 SD 卡
 
 用 [Raspberry Pi Imager](https://www.raspberrypi.com/software/)，選你的 Pi 型號和 **Raspberry Pi OS Lite**。在 OS customisation 裡設定使用者名稱、開啟 SSH、設定時區。Wi‑Fi 可以不填，之後可以用手機設定。
@@ -275,6 +277,7 @@ google-calendar-api/
 │   ├── main.py              # 入口：日曆更新與設定（python -m gcal_epd.main）
 │   ├── wifi_setup.py        # 入口：Wi-Fi 熱點設定，開機時以 root 執行
 │   ├── releases.py          # 入口：安裝、切換、回滾 release（root）
+│   ├── build_release.py     # 入口：建置 release 要發布的檔案（Mac／CI）
 │   ├── config.py            # 程式與資料根目錄、config.toml（加上本機設定）、路徑工具
 │   ├── version.py           # 目前執行的版本
 │   ├── domain/              # CalendarEvent / WeatherInfo + repository Protocol
@@ -293,7 +296,9 @@ google-calendar-api/
 ├── vendor/waveshare_epd/    # Waveshare 驅動
 ├── assets/fonts/            # NotoSansCJKtc-Regular.otf
 ├── deploy/                  # setup.sh、install.sh、install-release.sh、unit 範本
-├── docs/                    # 架構文件
+│   ├── sdcard/              # prepare.sh（Mac）、firstboot.sh（Pi）、debs.lock
+│   └── release/             # sign.sh、allowed_signers
+├── docs/                    # 架構、部署文件
 ├── tests/
 ├── config.toml              # 執行設定（納入版本控制）
 ├── ics_feeds.example.toml   # ics_feeds.toml 的範本（ics_feeds.toml 本身是機密，不進版本控制）
@@ -313,4 +318,4 @@ venv/bin/python -m gcal_epd.main    # 畫出 preview.png；不需要面板
 
 文件有英文和繁體中文兩個版本，以英文為準。修改某個章節時，請同步修改 `.zh-TW.md` 裡對應的章節。有一個測試會檢查兩個版本的標題和圖保持一致。
 
-CI（`.github/workflows/ci.yml`）會在每個 pull request 以 Python 3.11（開發機）和 3.13（Pi）執行同樣的 `pytest -q`，並用 shellcheck 檢查 `deploy/*.sh`。
+CI（`.github/workflows/ci.yml`）會在每個 pull request 以 Python 3.11（開發機）和 3.13（Pi）執行同樣的 `pytest -q`，並用 shellcheck 檢查 `deploy/*.sh` 和 `deploy/*/*.sh`。推送 `vX.Y.Z` tag 會執行 `.github/workflows/release.yml`，見 [docs/DEPLOYMENT.zh-TW.md](docs/DEPLOYMENT.zh-TW.md)。
