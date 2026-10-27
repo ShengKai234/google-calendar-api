@@ -5,3 +5,5 @@
 #   e-pages-release namespaces="e-pages-release" ssh-ed25519 AAAA... e-pages-release-backup
 # The everyday key signs every release; the backup key, kept offline, signs
 # only the release that replaces a lost or leaked everyday key.
+e-pages-release namespaces="e-pages-release" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPLWwBtsEPuTxQE/pP/IpzA+2d5qwPkAg656vXWwpVbw e-pages-release
+e-pages-release namespaces="e-pages-release" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJlqnLIkJjGGKWjpaFMclvAbKuHZ+JLb5zvV+E/xVFuO e-pages-release-backup
