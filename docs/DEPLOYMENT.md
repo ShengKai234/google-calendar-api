@@ -162,21 +162,74 @@ from step 1 (cloud-init runs `user-data` once per card).
    gh release edit v0.2.0 --prerelease=false --latest
    ```
 
-### Signing key, once
+### Signing keys, once
 
-```bash
-ssh-keygen -t ed25519 -f ~/.ssh/e-pages-release -C e-pages-release
-```
+Two keys, made before the first release is tagged:
 
-Add its public half to `deploy/release/allowed_signers`:
+| Key | Kept | Signs |
+|---|---|---|
+| everyday, `~/.ssh/e-pages-release` | on the maintainer's Mac | every release |
+| backup | offline: a password manager, or a USB stick put away | only the release that replaces a lost or leaked everyday key |
 
-```
-e-pages-release namespaces="e-pages-release" ssh-ed25519 AAAA... e-pages-release
-```
+A display accepts a release signed by any key listed in the
+`allowed_signers` of the release it is **already running**. With the
+backup listed from the start, losing the everyday key costs one release,
+not a trip to every display.
 
-Commit that before tagging, so every release carries the key that checks
-the next one. The private key stays on the Mac: never in the repository,
-CI secrets or a chat.
+1. Make both, each with a passphrase:
+
+   ```bash
+   ssh-keygen -t ed25519 -f ~/.ssh/e-pages-release -C e-pages-release
+   ssh-keygen -t ed25519 -f ~/e-pages-release-backup -C e-pages-release-backup
+   ```
+
+2. List both public keys in `deploy/release/allowed_signers`:
+
+   ```bash
+   for k in ~/.ssh/e-pages-release ~/e-pages-release-backup; do
+       echo "e-pages-release namespaces=\"e-pages-release\" $(cat "$k.pub")"
+   done >> deploy/release/allowed_signers
+   ```
+
+3. Store the backup: put `~/e-pages-release-backup` (the private file) in
+   the password manager or on the USB stick, with its passphrase kept
+   apart from it. Then delete it from the Mac:
+
+   ```bash
+   rm ~/e-pages-release-backup ~/e-pages-release-backup.pub
+   ```
+
+4. Commit `allowed_signers` and tag the first release; every display then
+   trusts both keys.
+
+Private keys never go in the repository, CI secrets or a chat. Public keys
+are not secret.
+
+### When a key is lost or leaked
+
+Replace the everyday key with one release signed by the backup:
+
+1. Make a new everyday key (step 1 above, first line). In
+   `allowed_signers`, replace the old everyday line with the new one; keep
+   the backup line.
+2. Bump the version, merge, tag. When the release is published, bring the
+   backup key back onto the Mac for a moment and sign with it:
+
+   ```bash
+   bash deploy/release/sign.sh v0.5.0 --key /path/to/e-pages-release-backup
+   rm /path/to/e-pages-release-backup
+   ```
+
+3. Displays verify it with the backup key they already trust, install it,
+   and from then on trust the new everyday key; the old one no longer
+   works anywhere. New cards need nothing: `git pull` before `prepare.sh`.
+4. If the backup itself was exposed, make a new backup the same way and
+   ship it in the next release, signed with the new everyday key.
+
+A display that stays off past this release still trusts only the old
+keys: the backup-signed release must stay available until it has updated.
+If both keys are lost, every display has to be reinstalled by hand: over
+SSH with `deploy/install-release.sh`, or by writing its card again.
 
 ### Build without publishing
 

@@ -24,8 +24,10 @@ everything about installing it.
   commit, print, log or paste them, on the Mac or the Pi.
 - **Never store or repeat passwords or keys** a person gives you (the Pi's
   sudo password, the release signing key). Ask again when needed.
-- The release signing key stays on the maintainer's Mac. Do not generate a
-  replacement, move it, or put it into CI.
+- Release signing keys: an everyday key on the maintainer's Mac and an
+  offline backup key, both listed in `deploy/release/allowed_signers`. Do
+  not generate, move or replace keys, or put one into CI; key rotation is
+  the maintainer's call (docs/DEPLOYMENT.md, "When a key is lost or leaked").
 - Pull requests target `develop`. One refactor or feature per branch. Ask
   before force-pushing.
 - Docs exist in English and Traditional Chinese (`*.zh-TW.md`). English is

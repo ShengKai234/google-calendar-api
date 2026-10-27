@@ -2,18 +2,19 @@
 # Sign a published release on this Mac: the private key never leaves it,
 # so a stolen GitHub token alone cannot ship code to the displays.
 #
-#   bash deploy/release/sign.sh v0.2.0
+#   bash deploy/release/sign.sh v0.2.0                  # the everyday key
+#   bash deploy/release/sign.sh v0.5.0 --key FILE       # e.g. the backup key
 #
 # Downloads every file of the release, checks each against its SHA256SUMS
 # (so what you sign is what was published), signs SHA256SUMS with
 # ssh-keygen and uploads SHA256SUMS.sig. Displays (and prepare.sh) accept
 # a release only if that signature verifies against allowed_signers.
 #
-# Key: $EPD_SIGNING_KEY, default ~/.ssh/e-pages-release. Make it once:
-#   ssh-keygen -t ed25519 -f ~/.ssh/e-pages-release -C e-pages-release
-# and add its public half to deploy/release/allowed_signers as
-#   e-pages-release namespaces="e-pages-release" ssh-ed25519 AAAA...
-# (commit that line before the release is tagged, so it ships in it).
+# Two keys, both listed in deploy/release/allowed_signers (see
+# docs/DEPLOYMENT.md, "Signing keys"):
+#   ~/.ssh/e-pages-release   everyday key, on this Mac ($EPD_SIGNING_KEY)
+#   backup key               kept offline; signs only the release that
+#                            replaces a lost or leaked everyday key
 set -euo pipefail
 
 REPO=ShengKai234/google-calendar-api
@@ -21,7 +22,15 @@ NAMESPACE=e-pages-release
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SIGNERS="$HERE/allowed_signers"
 KEY="${EPD_SIGNING_KEY:-$HOME/.ssh/e-pages-release}"
-TAG="${1:?usage: sign.sh vX.Y.Z}"
+TAG=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --key) KEY="$2"; shift 2 ;;
+        -*) echo "Unknown option: $1"; exit 2 ;;
+        *) TAG="$1"; shift ;;
+    esac
+done
+[ -n "$TAG" ] || { echo "usage: sign.sh vX.Y.Z [--key FILE]"; exit 2; }
 
 [ -f "$KEY" ] || { echo "No signing key at $KEY (see the top of this script)."; exit 1; }
 WORK="$(mktemp -d)"
@@ -43,9 +52,14 @@ shasum -a 256 -c SHA256SUMS
 cat SHA256SUMS
 
 ssh-keygen -Y sign -f "$KEY" -n "$NAMESPACE" SHA256SUMS
-ssh-keygen -Y verify -f "$SIGNERS" -I "$NAMESPACE" -n "$NAMESPACE" \
-    -s SHA256SUMS.sig < SHA256SUMS || {
-    echo "Signed, but $SIGNERS does not accept this key: add its public key there."
+# Checked against the keys this release ships: a display keeps trusting
+# exactly those after installing it.
+SHIPPED="$WORK/shipped_allowed_signers"
+tar -xzf e-pages-*.tar.gz -O deploy/release/allowed_signers > "$SHIPPED" 2>/dev/null || \
+    cp "$SIGNERS" "$SHIPPED"
+ssh-keygen -Y verify -f "$SHIPPED" -I "$NAMESPACE" -n "$NAMESPACE" \
+    -s SHA256SUMS.sig < SHA256SUMS > /dev/null || {
+    echo "Signed, but the release's allowed_signers does not list this key."
     exit 1
 }
 gh release upload "$TAG" -R "$REPO" SHA256SUMS.sig --clobber

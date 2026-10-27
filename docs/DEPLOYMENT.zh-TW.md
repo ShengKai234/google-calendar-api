@@ -135,17 +135,56 @@ journalctl -b -u epd-wifi-setup -u gcal-epd --no-pager | tail -50
 
 ### 簽章金鑰（只需做一次）
 
-```bash
-ssh-keygen -t ed25519 -f ~/.ssh/e-pages-release -C e-pages-release
-```
+在第一個 release 打 tag 之前，建立兩把金鑰：
 
-把公鑰加進 `deploy/release/allowed_signers`：
+| 金鑰 | 存放位置 | 用來簽 |
+|---|---|---|
+| 日常金鑰，`~/.ssh/e-pages-release` | 維護者的 Mac | 每一個 release |
+| 備用金鑰 | 離線保存：密碼管理器，或收好的 USB 隨身碟 | 只簽「取代遺失或外洩的日常金鑰」的那一個 release |
 
-```
-e-pages-release namespaces="e-pages-release" ssh-ed25519 AAAA... e-pages-release
-```
+裝置接受的 release，必須由它**目前執行中**那個版本的 `allowed_signers` 裡任一把金鑰簽章。從一開始就列入備用金鑰，日常金鑰遺失時只需要多發一個版本，不必逐台處理。
 
-在打 tag 前 commit，這樣每個 release 都帶著用來檢查下一版的公鑰。私鑰只留在 Mac 上：絕不放進 repo、CI secrets 或對話中。
+1. 建立兩把金鑰，都設定密碼：
+
+   ```bash
+   ssh-keygen -t ed25519 -f ~/.ssh/e-pages-release -C e-pages-release
+   ssh-keygen -t ed25519 -f ~/e-pages-release-backup -C e-pages-release-backup
+   ```
+
+2. 把兩把公鑰都列進 `deploy/release/allowed_signers`：
+
+   ```bash
+   for k in ~/.ssh/e-pages-release ~/e-pages-release-backup; do
+       echo "e-pages-release namespaces=\"e-pages-release\" $(cat "$k.pub")"
+   done >> deploy/release/allowed_signers
+   ```
+
+3. 保存備用金鑰：把 `~/e-pages-release-backup`（私鑰檔）存進密碼管理器或 USB 隨身碟，它的密碼另外分開保存。然後從 Mac 上刪除：
+
+   ```bash
+   rm ~/e-pages-release-backup ~/e-pages-release-backup.pub
+   ```
+
+4. Commit `allowed_signers`，再為第一個 release 打 tag；之後每台裝置都會信任這兩把金鑰。
+
+私鑰絕不放進 repo、CI secrets 或對話中。公鑰不是機密。
+
+### 金鑰遺失或外洩時
+
+用備用金鑰簽一個 release，換掉日常金鑰：
+
+1. 建立新的日常金鑰（上面步驟 1 的第一行）。在 `allowed_signers` 中，把舊的日常金鑰那行換成新的；備用金鑰那行保留。
+2. 更新版本號、合併、打 tag。release 發布後，暫時把備用金鑰放回 Mac，用它簽章：
+
+   ```bash
+   bash deploy/release/sign.sh v0.5.0 --key /path/to/e-pages-release-backup
+   rm /path/to/e-pages-release-backup
+   ```
+
+3. 裝置用它已經信任的備用金鑰驗證、安裝這個版本，之後就改為信任新的日常金鑰；舊的日常金鑰在任何裝置上都不再有效。新卡不需要額外處理：執行 `prepare.sh` 前先 `git pull` 即可。
+4. 如果連備用金鑰也外洩了，用同樣方式建立新的備用金鑰，放進下一個 release，用新的日常金鑰簽章。
+
+在這個版本發布期間一直沒開機的裝置，仍然只信任舊金鑰：用備用金鑰簽的那個 release 必須保留，直到它也更新完成。如果兩把金鑰都遺失，每台裝置都只能手動重裝：透過 SSH 執行 `deploy/install-release.sh`，或重新寫入 SD 卡。
 
 ### 只建置不發布
 
