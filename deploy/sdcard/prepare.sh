@@ -165,6 +165,10 @@ assert any("firstboot" in str(c) for c in d["runcmd"]) and d["power_state"]["mod
     echo "      user-data checked."
 fi
 
+# macOS tags files it writes (com.apple.provenance) and keeps such tags on
+# FAT as ._ files: harmless to the Pi, but clutter. Remove ours.
+find "$BOOT" -maxdepth 1 -name '._*' -delete 2>/dev/null || true
+find "$BOOT/epd-bundle" -name '._*' -delete 2>/dev/null || true
 sync
 echo ""
 echo "Done. Eject the card, put it in the Pi and power it on. The first boot"
