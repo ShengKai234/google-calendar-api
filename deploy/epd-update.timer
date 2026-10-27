@@ -1,0 +1,12 @@
+[Unit]
+Description=Check for a calendar update once a day
+
+[Timer]
+# 03:00 Taiwan time, spread over an hour so displays do not all ask at once.
+OnCalendar=*-*-* 03:00:00 Asia/Taipei
+RandomizedDelaySec=1h
+# Missed (the Pi was off): run soon after the next boot instead.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
