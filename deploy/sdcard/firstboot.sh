@@ -33,7 +33,9 @@ dpkg -i "$BUNDLE"/debs/*.deb
 echo "[2/3] The calendar, as a release under /opt/e-pages (takes a few minutes)..."
 # The installer is part of the release it installs: run it from a copy.
 SRC="$(mktemp -d)"
-tar -xzf "$BUNDLE/app.tar.gz" -C "$SRC"
+# -m: a new card's clock still says when its image was built, so every
+# file's real time would be "in the future" (one warning each).
+tar -xzmf "$BUNDLE/app.tar.gz" -C "$SRC"
 # PYTHONPATH reaches only the installer; it keeps it from the new release.
 env PYTHONPATH="$SRC/src" PYTHONDONTWRITEBYTECODE=1 \
     python3 -m gcal_epd.releases install \
