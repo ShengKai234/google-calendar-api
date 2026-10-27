@@ -1,0 +1,28 @@
+# .deb packages a fresh Raspberry Pi OS Lite (Trixie, 32-bit) card lacks:
+# the libraries Pillow's piwheels wheel links against, and watchdog
+# (deploy/install.sh enables it). deploy/sdcard/firstboot.sh installs them
+# with dpkg, before the card has any network.
+#
+# Pinned with their SHA-256, so every card gets the files checked here.
+# When a build fails to download one (the archive dropped that version for
+# a newer one), re-pin, review the diff and commit:
+#   python -m gcal_epd.build_release --refresh-debs
+#
+# The list is what `apt-get install --download-only` fetched for these
+# packages inside the 2026-10-06 Lite image: none of their dependencies
+# was missing. Re-check it when the base image changes.
+archive http://raspbian.raspberrypi.com/raspbian
+suite trixie
+libfreetype6 2.13.3+dfsg-1+deb13u1 pool/main/f/freetype/libfreetype6_2.13.3+dfsg-1+deb13u1_armhf.deb 01ef8315f78726b48d5f6a892966e3dd3b1dba118e1412605c7b362ece107bb4
+liblcms2-2 2.16-2+deb13u2 pool/main/l/lcms2/liblcms2-2_2.16-2+deb13u2_armhf.deb a2ecde1fbd1a0d6e09be69a26f65700fd82e93225d4414a6b94411cf7e35b5a3
+libopenjp2-7 2.5.3-2.1~deb13u2 pool/main/o/openjpeg2/libopenjp2-7_2.5.3-2.1~deb13u2_armhf.deb f1301460c59da0f702a71b6b2e9e91cdfe7988559f3d17c9faac97da7591c63d
+libwebpdemux2 1.5.0-0.1 pool/main/libw/libwebp/libwebpdemux2_1.5.0-0.1_armhf.deb e5605ccc794d50d8026966e07e6d8e3570efc140015089e956e63b7903f44d5b
+libwebpmux3 1.5.0-0.1 pool/main/libw/libwebp/libwebpmux3_1.5.0-0.1_armhf.deb 9a807ecef378e0d33c97cbf3bc668a17dd0349c5b1ac2b5531dee50e841a2fde
+libavif16 1.2.1-1.2 pool/main/liba/libavif/libavif16_1.2.1-1.2_armhf.deb 5d61dc98ec3592862dd24945864d1210d30f3020976f8bca74d72e8eec40cd9e
+libaom3 3.12.1-1+deb13u1 pool/main/a/aom/libaom3_3.12.1-1+deb13u1_armhf.deb 71cd1c2d3679ef4559e5bff954ae809eed6d560fa758075e584fd935d4c73b1f
+libdav1d7 1.5.1-1+rpi1 pool/main/d/dav1d/libdav1d7_1.5.1-1+rpi1_armhf.deb 6eeb8434328d744d8632fb82bb3d0e90132fbfb75eaaed800cb8cd4b3b295715
+libgav1-1 0.19.0-3+rpi1+b1 pool/main/libg/libgav1/libgav1-1_0.19.0-3+rpi1+b1_armhf.deb fee5d0f3c3ac6bb43eab7bb891addbcef2f1fbb4061590fd0947ea493de75301
+librav1e0.7 0.7.1-9 pool/main/r/rust-rav1e/librav1e0.7_0.7.1-9_armhf.deb 62642d827390422ff589efe9805c37a378270f89d5b59f54dfe7cbea8a64ebbf
+libsvtav1enc2 2.3.0+dfsg-1 pool/main/s/svt-av1/libsvtav1enc2_2.3.0+dfsg-1_armhf.deb 807df3600d5079252d9bcbe4ba5a31b8fc3048e4dee9fa4705cbe58bf204b566
+libyuv0 0.0.1904.20250204-1 pool/main/liby/libyuv/libyuv0_0.0.1904.20250204-1_armhf.deb 4103f68dbe497e8aa127d4085d91d1bf6d57f22adeb30daa5b5d8504011ba43f
+watchdog 5.16-1.1 pool/main/w/watchdog/watchdog_5.16-1.1_armhf.deb 8b87393c05976417f36ad5cf6e278f1e6e7d2603ae78b8daba91c1b5bc317576

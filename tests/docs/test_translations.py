@@ -13,6 +13,7 @@ ROOT = Path(__file__).parent.parent.parent
 PAIRS = [
     (ROOT / "README.md", ROOT / "README.zh-TW.md"),
     (ROOT / "docs" / "ARCHITECTURE.md", ROOT / "docs" / "ARCHITECTURE.zh-TW.md"),
+    (ROOT / "docs" / "DEPLOYMENT.md", ROOT / "docs" / "DEPLOYMENT.zh-TW.md"),
 ]
 IDS = [p[0].relative_to(ROOT).as_posix() for p in PAIRS]
 
