@@ -1,0 +1,4 @@
+# Keys whose signature on a release's SHA256SUMS is accepted
+# (ssh-keygen ALLOWED SIGNERS format; see deploy/release/sign.sh).
+# One line per key:
+#   e-pages-release namespaces="e-pages-release" ssh-ed25519 AAAA... comment

@@ -33,4 +33,4 @@ jobs:
       - uses: actions/checkout@v4
       # Warning level: setup.sh sources the venv it creates at run time,
       # which shellcheck can only report as info (SC1091).
-      - run: shellcheck --severity=warning deploy/*.sh
+      - run: shellcheck --severity=warning deploy/*.sh deploy/*/*.sh
