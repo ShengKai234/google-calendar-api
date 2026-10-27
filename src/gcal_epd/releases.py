@@ -27,6 +27,7 @@ import argparse
 import logging
 import os
 import pwd
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -47,6 +48,7 @@ KEEP = 2
 HEALTH_TIMEOUT = 300
 # A release whose build fails this many times is not tried again.
 MAX_ATTEMPTS = 3
+DOWNLOAD_PREFIX = ".download-"
 
 
 def _owner(user: str):
@@ -210,6 +212,8 @@ def update(args, layout: ReleaseLayout, run=installer.run, fetch=updater.fetch,
 
 
 def _apply(cand, current, layout, state, run, fetch, download, now, no_units) -> str:
+    for leftover in layout.base.glob(f"{DOWNLOAD_PREFIX}*"):   # a power cut mid-download
+        shutil.rmtree(leftover, ignore_errors=True)
     if not updater.enough_room(layout.base):
         raise InstallError(f"Less than {updater.MIN_FREE_BYTES // 2**20} MB free "
                            f"on {layout.base}: not updating.")
@@ -218,7 +222,7 @@ def _apply(cand, current, layout, state, run, fetch, download, now, no_units) ->
     attempts[cand.label] = attempts.get(cand.label, 0) + 1
     if attempts[cand.label] >= MAX_ATTEMPTS:
         state.rejected.append(cand.label)   # the next run skips it
-    with tempfile.TemporaryDirectory(dir=layout.base, prefix=".download-") as tmp:
+    with tempfile.TemporaryDirectory(dir=layout.base, prefix=DOWNLOAD_PREFIX) as tmp:
         app, wheels = updater.fetch_release(cand, Path(tmp),
                                             layout.current_link / updater.SIGNERS,
                                             fetch, download, run)

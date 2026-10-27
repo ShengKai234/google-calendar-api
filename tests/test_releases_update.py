@@ -92,6 +92,14 @@ def test_update_installs_the_newer_release_and_records_it(tmp_path, key, layout)
     assert not list(layout.base.glob(".download-*"))
 
 
+def test_a_download_cut_short_earlier_is_cleaned_up(tmp_path, key, layout):
+    (layout.base / ".download-old").mkdir()
+    (layout.base / ".download-old" / "half.tar.gz").write_bytes(b"x")
+    fetch, download = github(tmp_path, key, ("0.3.0", False))
+    update(layout, FakeRun(), fetch, download)
+    assert not list(layout.base.glob(".download-*"))
+
+
 def test_unhealthy_release_is_rolled_back_and_never_retried(tmp_path, key, layout):
     fetch, download = github(tmp_path, key, ("0.3.0", False))
     run = FakeRun(healthy=False)
