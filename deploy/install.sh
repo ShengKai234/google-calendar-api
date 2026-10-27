@@ -3,13 +3,20 @@ set -e
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SERVICE_NAME="gcal-epd"
+# --yes: ask nothing, and do not offer to reboot at the end, for callers
+# with no one at the keyboard (gcal_epd.releases, the first-boot script).
+ASSUME_YES=no
+[ "${1:-}" = "--yes" ] && ASSUME_YES=yes
+# The paths below are asked of this directory's own app; an inherited
+# PYTHONPATH would make python answer for some other copy of it.
+unset PYTHONPATH PYTHONHOME
 
 echo "=== gcal-epd deploy ==="
 echo "Project: $PROJECT_DIR"
 echo ""
 
 # --- Verify running on Raspberry Pi ---
-if ! grep -q "Raspberry Pi" /proc/cpuinfo 2>/dev/null; then
+if ! grep -q "Raspberry Pi" /proc/cpuinfo 2>/dev/null && [ "$ASSUME_YES" = no ]; then
     echo "Warning: This script is intended for Raspberry Pi."
     read -rp "Continue anyway? [y/N] " confirm
     case "$confirm" in [Yy]) ;; *) exit 1 ;; esac
@@ -23,7 +30,10 @@ if [ ! -x "$PYTHON" ]; then
     echo "Error: $PYTHON not found — run deploy/setup.sh first."
     exit 1
 fi
-RUN_USER="$(stat -c %U "$PROJECT_DIR")"
+# The app runs as whoever owns its data: the checkout itself, or an
+# installed release's data/ (the release's code belongs to root).
+DATA_DIR="$(cd "$PROJECT_DIR" && "$PYTHON" -c 'from gcal_epd.config import DATA_DIR; print(DATA_DIR)')"
+RUN_USER="${EPD_USER:-$(stat -c %U "$DATA_DIR")}"
 # Ask the app itself, so the units and config.toml's feeds_file never disagree.
 FEEDS_FILE="$(cd "$PROJECT_DIR" && "$PYTHON" -c \
     'from gcal_epd.config import feeds_file, load_config; print(feeds_file(load_config()))')"
@@ -42,6 +52,7 @@ done
 
 echo "      Project : $PROJECT_DIR"
 echo "      User    : $RUN_USER"
+echo "      Data    : $DATA_DIR"
 echo "      Feeds   : $FEEDS_FILE"
 echo "      Pending : $PENDING_FILE"
 
@@ -119,5 +130,6 @@ echo "                (systemd-run, so it survives the SSH session dropping with
 echo "                 --start-unit, so links entered on the form get checked.)"
 echo ""
 echo "Note: Reboot required for watchdog to take effect."
+[ "$ASSUME_YES" = yes ] && exit 0
 read -rp "Reboot now? [y/N] " reboot_now
 case "$reboot_now" in [Yy]) sudo reboot ;; esac

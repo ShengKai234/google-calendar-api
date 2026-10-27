@@ -163,12 +163,13 @@ def start_units(result: str, units: list[str], run=subprocess.run) -> None:
 
 def _stash_feeds(links: list[str]) -> None:
     """Park links from the hotspot form for epd-feed-setup.service to check."""
-    from gcal_epd.config import PROJECT_ROOT, feeds_file, load_config
+    from gcal_epd.config import DATA_DIR, feeds_file, load_config
     from gcal_epd.infrastructure.feeds_file import pending_feeds_path, write_pending_feeds
 
     path = pending_feeds_path(feeds_file(load_config()))
-    # This runs as root; the calendar units run as the checkout's owner.
-    write_pending_feeds(path, links, owner_of=PROJECT_ROOT)
+    # This runs as root; the calendar units run as the owner of the data
+    # directory (the checkout itself, or an installed release's data/).
+    write_pending_feeds(path, links, owner_of=DATA_DIR)
     log.info("Parked %d calendar link(s) for checking.", len(links))
 
 

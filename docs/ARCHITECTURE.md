@@ -118,6 +118,15 @@ flowchart LR
 and `config.toml` can never disagree. `install.sh` refuses paths with spaces and any placeholder it
 does not fill.
 
+Two roots, in `config.py`: `PROJECT_ROOT` is the code (shipped `config.toml`,
+fonts, `vendor/`) and `DATA_DIR` is this display's own files (feeds, parked
+links, `config.local.toml`, the preview). In a checkout they are the same
+directory. A release installed by `gcal_epd.releases` lives at
+`/opt/e-pages/releases/<version>` (it has a `RELEASE` file) and keeps its data
+in `/opt/e-pages/data`; the units then use `/opt/e-pages/current` as
+`@PROJECT_DIR@`, a link moved atomically from one whole release to the next.
+`@USER@` is the owner of `DATA_DIR`, since a release's code belongs to root.
+
 ---
 
 ## Runtime: systemd units

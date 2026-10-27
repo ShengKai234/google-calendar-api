@@ -152,6 +152,10 @@ font_path = "assets/fonts/NotoSansCJKtc-Regular.otf"
 
 相對路徑以專案資料夾為準。修改 `feeds_file` 之後，要重跑 `bash deploy/install.sh`，讓 unit 改看新的檔案。
 
+只想改某一台的設定（例如換城市）時，把那幾項寫進日曆網址檔旁邊的 `config.local.toml`。它會疊在 `config.toml` 上面，而且不進版本控制。表格（table）逐項合併；`[[sources]]` 這類清單則整個取代原本的。這樣更新時可以改預設值，又不會蓋掉你的修改。
+
+日曆網址檔、`config.local.toml` 和預覽圖是這台機器的「資料」。用 git checkout 時它們在專案資料夾裡；安裝成 release 後（見[安裝成 release](#安裝成-release)），它們在 `/opt/e-pages/data/`，和程式分開，所以更新永遠不會動到它們。
+
 ---
 
 ## 排程
@@ -193,6 +197,32 @@ systemctl list-timers gcal-epd.timer      # 下次排程時間
 ```bash
 git pull
 bash deploy/install.sh
+```
+
+### 安裝成 release
+
+開發中的 OTA 更新會把程式安裝成並排的「release」，可以原子切換，也能退回上一版：
+
+```
+/opt/e-pages/releases/<版本>/      程式和它自己的 .venv（屬於 root）
+/opt/e-pages/current  -> releases/<版本>      unit 執行的版本
+/opt/e-pages/previous -> releases/<版本>      回滾時回到的版本
+/opt/e-pages/data/                 日曆網址、config.local.toml、預覽圖
+```
+
+把一台機器從 checkout 搬到這個配置，在 Pi 上執行：
+
+```bash
+cd ~/google-calendar-api && git pull
+bash deploy/install-release.sh --migrate-from ~/google-calendar-api
+```
+
+它會安裝 checkout 已 commit 的 `HEAD`（不含未 commit 的修改和 gitignore 的檔案），建立 venv，等新版能 import 並回報正確版本後才切換，接著讓 unit 改指向 `/opt/e-pages/current`。日曆網址檔和其他設定會「複製」（不是搬移）到 `data/`，舊的 checkout 保持原樣。
+
+```bash
+sudo python3 -m gcal_epd.releases list        # 在 checkout 裡執行，需設定 PYTHONPATH=src
+sudo python3 -m gcal_epd.releases rollback    # 回到上一版
+sudo python3 -m gcal_epd.releases switch 0.2.0
 ```
 
 ### 更新套件
@@ -244,7 +274,9 @@ google-calendar-api/
 ├── src/gcal_epd/
 │   ├── main.py              # 入口：日曆更新與設定（python -m gcal_epd.main）
 │   ├── wifi_setup.py        # 入口：Wi-Fi 熱點設定，開機時以 root 執行
-│   ├── config.py            # 專案路徑、config.toml、路徑工具
+│   ├── releases.py          # 入口：安裝、切換、回滾 release（root）
+│   ├── config.py            # 程式與資料根目錄、config.toml（加上本機設定）、路徑工具
+│   ├── version.py           # 目前執行的版本
 │   ├── domain/              # CalendarEvent / WeatherInfo + repository Protocol
 │   ├── application/
 │   │   ├── display_service.py  # 抓資料 → 畫圖 → 面板
@@ -254,12 +286,13 @@ google-calendar-api/
 │   │   ├── ics/             # iCalendar 日曆來源
 │   │   ├── open_meteo/      # 天氣來源
 │   │   ├── onboarding/      # 日曆設定網頁表單（家裡網路，需 PIN）
+│   │   ├── release/         # release 配置、建置、從 checkout 遷移
 │   │   └── wifi/            # NetworkManager 包裝 + 熱點網頁表單
 │   ├── render/              # layout.py、draw.py、wifi_screens.py
 │   └── epd.py               # 把圖推到面板
 ├── vendor/waveshare_epd/    # Waveshare 驅動
 ├── assets/fonts/            # NotoSansCJKtc-Regular.otf
-├── deploy/                  # setup.sh、install.sh、systemd unit 範本
+├── deploy/                  # setup.sh、install.sh、install-release.sh、unit 範本
 ├── docs/                    # 架構文件
 ├── tests/
 ├── config.toml              # 執行設定（納入版本控制）

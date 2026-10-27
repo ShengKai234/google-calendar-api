@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 
-from gcal_epd.config import font_path, resolve
+from gcal_epd.config import font_path, output_path as _output_path
 from gcal_epd.domain.repositories import EventRepository, WeatherRepository
 from gcal_epd.render.draw import render
 
@@ -14,9 +14,15 @@ def run(
     config: dict,
     project_root: Path,
     push_display: bool = False,
+    data_dir: Path | None = None,
 ) -> None:
-    display_cfg = config.get("display", {})
-    output_path = resolve(display_cfg.get("output_path", "preview.png"), project_root)
+    """Fetch, render and (optionally) push to the panel.
+
+    Fonts come from `project_root` (the code); the preview is written to
+    `data_dir` (this display's files), which defaults to `project_root`
+    as in a git checkout.
+    """
+    output_path = _output_path(config, project_root if data_dir is None else data_dir)
     font = font_path(config, project_root)
 
     source_cfg = next(

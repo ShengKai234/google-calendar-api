@@ -188,3 +188,24 @@ def test_run_push_display_calls_epd(mock_render, tmp_path):
             push_display=True,
         )
         mock_epd_push.assert_called_once_with(fake_img)
+
+
+@patch("gcal_epd.application.display_service.render")
+def test_preview_goes_to_the_data_dir_not_the_code(mock_render, tmp_path):
+    """An installed release's code is read-only; the preview lives with the data."""
+    from gcal_epd.application.display_service import run
+
+    code, data = tmp_path / "code", tmp_path / "data"
+    run(event_repos=[], weather_repo=None, config=_CONFIG,
+        project_root=code, data_dir=data)
+
+    assert mock_render.call_args.kwargs["output_path"] == str(data / "preview.png")
+
+
+@patch("gcal_epd.application.display_service.render")
+def test_preview_defaults_to_the_checkout(mock_render, tmp_path):
+    from gcal_epd.application.display_service import run
+
+    run(event_repos=[], weather_repo=None, config=_CONFIG, project_root=tmp_path)
+
+    assert mock_render.call_args.kwargs["output_path"] == str(tmp_path / "preview.png")
