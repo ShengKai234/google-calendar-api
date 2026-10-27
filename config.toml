@@ -15,3 +15,10 @@ location = "Taipei"
 [display]
 output_path = "preview.png"
 font_path = "assets/fonts/NotoSansCJKtc-Regular.otf"
+
+[update]
+# Over-the-air updates of an installed release (docs/DEPLOYMENT.md).
+# channel: "stable" takes full releases; "beta" takes pre-releases too.
+# Set either per display in config.local.toml, e.g. [update] channel = "beta".
+enabled = true
+channel = "stable"
