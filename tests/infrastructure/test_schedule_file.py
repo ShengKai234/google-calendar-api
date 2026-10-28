@@ -52,9 +52,9 @@ def test_written_as_root_goes_to_the_checkout_owner(tmp_path):
     assert seen == [(st.st_uid, st.st_gid)]
 
 
-def test_config_paths():
+def test_config_paths(tmp_path):
     conf = {"power": {"schedule_file": "x.toml", "timezone": "UTC"}}
-    assert cfg.schedule_file(conf) == cfg.PROJECT_ROOT / "x.toml"
+    assert cfg.schedule_file(conf, data=tmp_path) == tmp_path / "x.toml"
     assert str(cfg.power_timezone(conf)) == "UTC"
     assert cfg.schedule_file({}).name == "power_schedule.toml"
     assert str(cfg.power_timezone({})) == "Asia/Taipei"

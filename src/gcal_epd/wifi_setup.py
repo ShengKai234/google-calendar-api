@@ -179,7 +179,7 @@ def _schedule_store():
     Never fatal: this runs at boot to get the display online, so a missing
     or broken config.toml gives a store that keeps them in memory only.
     """
-    from gcal_epd.config import PROJECT_ROOT, load_config, schedule_file
+    from gcal_epd.config import DATA_DIR, load_config, schedule_file
     from gcal_epd.infrastructure.schedule_file import InMemoryScheduleStore, TomlScheduleStore
 
     try:
@@ -187,8 +187,8 @@ def _schedule_store():
     except Exception as e:
         log.warning("Wake-up times will not be saved: %s", e)
         return InMemoryScheduleStore()
-    # This runs as root; the forms that edit it later run as the checkout's owner.
-    return TomlScheduleStore(path, owner_of=PROJECT_ROOT)
+    # This runs as root; the forms that edit it later run as the owner of the data.
+    return TomlScheduleStore(path, owner_of=DATA_DIR)
 
 
 def main() -> None:
