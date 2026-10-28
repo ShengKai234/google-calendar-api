@@ -19,7 +19,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+from gcal_epd.domain.power_ports import ScheduleStore
+from gcal_epd.domain.power_schedule import format_slot
 from gcal_epd.infrastructure.feeds_file import write_feeds_file
+from gcal_epd.infrastructure.schedule_file import InMemoryScheduleStore
+from gcal_epd.infrastructure.web.schedule_form import (
+    SCHEDULE_CSS,
+    ScheduleFields,
+    save_schedule_safely,
+)
 
 log = logging.getLogger(__name__)
 
@@ -133,6 +141,7 @@ border:0;border-radius:8px;background:#2563eb;color:#fff}}
 .ok{{background:#dcfce7;color:#166534}}
 @media(prefers-color-scheme:dark){{.err{{background:#7f1d1d;color:#fecaca}}
 .ok{{background:#14532d;color:#bbf7d0}}}}
+{schedule_css}
 </style></head><body>
 <h1>Calendar Setup</h1>
 <p class="sub">Paste your calendar feed links below.</p>
@@ -147,6 +156,7 @@ border:0;border-radius:8px;background:#2563eb;color:#fff}}
 https://calendar.google.com/calendar/ical/.../basic.ics">{urls_value}</textarea>
 <small>Apple: Calendar &rsaquo; right-click calendar &rsaquo; Share &rsaquo; Public Calendar.
 Google: Settings &rsaquo; calendar &rsaquo; Integrate calendar &rsaquo; secret iCal address.</small>
+{schedule}
 <button type="submit">Save and show my calendar</button>
 </form></body></html>"""
 
@@ -158,6 +168,7 @@ max-width:34rem;margin-inline:auto;text-align:center}}
 h1{{font-size:1.4rem}} ul{{text-align:left;display:inline-block}}
 </style></head><body><h1>Connected</h1>
 <p>{summary}</p><ul>{items}</ul>
+<p>{schedule}</p>
 <p>You can close this page — the display is updating now.</p>
 </body></html>"""
 
@@ -181,9 +192,11 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def _page(self, message: str = "", pin: str = "", urls: str = "",
-              status: int = 200) -> None:
+              times: ScheduleFields | None = None, status: int = 200) -> None:
+        times = times or ScheduleFields.of(self.server.schedule)
         self._send(_PAGE.format(message=message, pin_value=escape(pin),
-                                urls_value=escape(urls)), status)
+                                urls_value=escape(urls), schedule=times.html(),
+                                schedule_css=SCHEDULE_CSS), status)
 
     # --- routes -----------------------------------------------------
     def do_GET(self) -> None:
@@ -203,31 +216,39 @@ class _Handler(BaseHTTPRequestHandler):
                        status=400)
             return
 
-        form = parse_qs(self.rfile.read(length).decode("utf-8", "replace"))
+        # Blank values kept, so a cleared time input comes back as a box to fill.
+        form = parse_qs(self.rfile.read(length).decode("utf-8", "replace"),
+                        keep_blank_values=True)
         pin = (form.get("pin") or [""])[0].strip()
         raw_urls = (form.get("urls") or [""])[0]
+        times = ScheduleFields.from_form(form)
 
         if not secrets.compare_digest(pin, self.server.pin):
             log.warning("Onboarding: rejected a submission with a wrong PIN.")
             self._page('<div class="msg err">That PIN does not match the '
                        'display. Check the screen and try again.</div>',
-                       urls=raw_urls, status=403)
+                       urls=raw_urls, times=times, status=403)
             return
 
-        urls, errors = [], []
+        urls, errors = [], []  # errors are HTML, escaped as they are added
         for line in raw_urls.splitlines():
             if not line.strip():
                 continue
             try:
                 urls.append(validate_feed_url(line))
             except ValueError as e:
-                errors.append(f"{escape(line.strip()[:40])}… — {e}")
+                errors.append(f"{escape(line.strip()[:40])}… — {escape(str(e))}")
         if not urls:
             errors.append("No feed URLs given.")
+        schedule = None
+        if times is not None:
+            try:
+                schedule = times.to_schedule(self.server.schedule)
+            except ValueError as e:
+                errors.append(f"Wake-up times: {escape(str(e))}.")
         if errors:
-            self._page('<div class="msg err">' +
-                       "<br>".join(escape(e) if "—" not in e else e for e in errors) +
-                       "</div>", pin=pin, urls=raw_urls, status=400)
+            self._page('<div class="msg err">' + "<br>".join(errors) + "</div>",
+                       pin=pin, urls=raw_urls, times=times, status=400)
             return
 
         # Probe before saving, so a bad URL fails here rather than showing
@@ -246,15 +267,23 @@ class _Handler(BaseHTTPRequestHandler):
             self._page('<div class="msg err">' +
                        "<br>".join(escape(f) for f in failures) +
                        " Check the link and try again.</div>",
-                       pin=pin, urls=raw_urls, status=400)
+                       pin=pin, urls=raw_urls, times=times, status=400)
             return
 
         write_feeds_file(self.server.feeds_path, feeds)
         log.info("Onboarding: saved %d feed(s) to %s",
                  len(feeds), self.server.feeds_path.name)
+        wake_note = ""
+        if schedule is not None:
+            if save_schedule_safely(self.server.schedule_store, schedule):
+                self.server.schedule = schedule
+                wake_note = "Wake-up times: " + ", ".join(
+                    format_slot(s) for s in schedule.slots) + "."
+            else:
+                wake_note = "The wake-up times could not be saved."
         self._send(_DONE.format(
             summary=f"Saved {len(feeds)} calendar feed(s).",
-            items="".join(results)))
+            items="".join(results), schedule=escape(wake_note)))
         self.server.configured = True
 
 
@@ -263,9 +292,13 @@ class FeedSetupServer:
 
     def __init__(self, feeds_path, port: int = DEFAULT_PORT,
                  pin: str | None = None, timeout: int = DEFAULT_TIMEOUT,
-                 notice: str = "") -> None:
+                 notice: str = "", schedule_store: ScheduleStore | None = None) -> None:
         self.feeds_path = Path(feeds_path)
         self.notice = notice  # shown on the form, e.g. why setup reopened
+        # Where the wake-up times are kept; the caller knows the file, the
+        # server only the store. The form starts from what it holds.
+        self.schedule_store = schedule_store or InMemoryScheduleStore()
+        self.schedule = self.schedule_store.load()
         self.port = port
         self.pin = pin or generate_pin()
         self.timeout = timeout
@@ -281,6 +314,8 @@ class FeedSetupServer:
         httpd.pin = self.pin
         httpd.feeds_path = self.feeds_path
         httpd.notice = self.notice
+        httpd.schedule = self.schedule
+        httpd.schedule_store = self.schedule_store
         httpd.configured = False
         httpd.timeout = 1
 

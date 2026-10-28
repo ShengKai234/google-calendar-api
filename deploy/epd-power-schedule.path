@@ -1,0 +1,13 @@
+# Template — deploy/install.sh fills in @PROJECT_DIR@, @USER@, @FEEDS_FILE@, @PENDING_FILE@ and @SCHEDULE_FILE@.
+# Install with that script; a copy made by hand will not start.
+[Unit]
+Description=Watch the e-Paper power schedule for changes
+
+[Path]
+# The setup form writes the schedule as the checkout's owner, who cannot
+# change gcal-epd.timer; this hands each change to a root unit.
+PathChanged=@SCHEDULE_FILE@
+Unit=epd-power-schedule.service
+
+[Install]
+WantedBy=paths.target
