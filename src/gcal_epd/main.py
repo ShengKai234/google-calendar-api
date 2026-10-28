@@ -1,39 +1,45 @@
+"""
+Entry point for the calendar: `python -m gcal_epd.main`.
+
+The composition root. It reads the command line, builds the repositories
+from config.toml, decides whether this run is setup or a routine refresh,
+and hands off to the application layer. The work itself lives elsewhere:
+setup in application/setup_service, the refresh in application/
+display_service, the feeds file in infrastructure/feeds_file.
+"""
 import argparse
 import logging
-import tomllib
-from pathlib import Path
+import sys
 
-from googleapiclient.errors import HttpError
-
-from gcal_epd.infrastructure.google_calendar.auth import get_credentials
-from gcal_epd.infrastructure.google_calendar.repository import GoogleCalendarRepository
-from gcal_epd.infrastructure.open_meteo.repository import OpenMeteoRepository
 from gcal_epd.application.display_service import run as run_display
+from gcal_epd.application.setup_service import apply_pending_feeds, run_onboarding
+from gcal_epd.config import DATA_DIR, DEFAULT_FEEDS_FILE, PROJECT_ROOT, feeds_file, load_config
+from gcal_epd.infrastructure.feeds_file import load_feeds, pending_feeds_path, reset_feeds
+from gcal_epd.infrastructure.ics.repository import ICSRepository
+from gcal_epd.infrastructure.open_meteo.repository import OpenMeteoRepository
+from gcal_epd.version import version
 
-logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)
 
-_PROJECT_ROOT = Path(__file__).parent.parent.parent
 
-
-def load_config(path: str = "config.toml") -> dict:
-    with open(_PROJECT_ROOT / path, "rb") as f:
-        return tomllib.load(f)
-
-
-def _build_event_repos(config: dict) -> list[GoogleCalendarRepository]:
-    repos = []
+def _build_event_repos(config: dict) -> list[ICSRepository]:
+    repos: list[ICSRepository] = []
     for source in config.get("sources", []):
-        if source["type"] == "google_calendar":
-            sa_file = str(_PROJECT_ROOT / source["service_account_file"])
-            creds = get_credentials(sa_file)
-            repos.append(GoogleCalendarRepository(creds, source.get("calendar_ids", [])))
+        if source.get("type") != "ics":
+            continue
+        feeds_path = DATA_DIR / source.get("feeds_file", DEFAULT_FEEDS_FILE)
+        for feed in load_feeds(feeds_path):
+            url = feed.get("url", "")
+            if not url:
+                log.warning("Skipping feed with no url: %s", feed.get("name", "(unnamed)"))
+                continue
+            repos.append(ICSRepository(url=url, name=feed.get("name", "")))
     return repos
 
 
 def _build_weather_repo(config: dict) -> OpenMeteoRepository | None:
     for source in config.get("sources", []):
-        if source["type"] == "open_meteo":
+        if source.get("type") == "open_meteo":
             return OpenMeteoRepository(
                 latitude=source["latitude"],
                 longitude=source["longitude"],
@@ -42,36 +48,101 @@ def _build_weather_repo(config: dict) -> OpenMeteoRepository | None:
     return None
 
 
+def _confirm_reset(config: dict, assume_yes: bool = False) -> bool:
+    """Confirm, then delete the saved feeds. True if the reset went ahead."""
+    feeds_path = feeds_file(config)
+    if not feeds_path.exists():
+        log.info("Nothing to reset — %s does not exist.", feeds_path.name)
+        return True  # fall through to setup anyway
+
+    if not assume_yes:
+        if not sys.stdin.isatty():
+            log.error(
+                "Refusing to reset without confirmation. "
+                "Re-run with --yes if you really mean it."
+            )
+            return False
+        answer = input(
+            f"Delete {feeds_path.name} and all saved calendar feeds? [y/N] "
+        ).strip().lower()
+        if answer not in ("y", "yes"):
+            return False
+
+    reset_feeds(feeds_path)
+    return True
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Fetch Google Calendar and render to e-ink display")
-    parser.add_argument("--display", action="store_true", help="Push rendered image to e-ink display (Raspberry Pi only)")
-    parser.add_argument("--setup", action="store_true", help="Run one-time calendar sharing setup")
-    parser.add_argument("--email", help="Google Calendar email to use during setup (skips interactive prompt)")
+    parser = argparse.ArgumentParser(
+        description="Fetch calendar feeds and render to e-ink display"
+    )
+    parser.add_argument("--version", action="version", version=f"gcal-epd {version()}")
+    parser.add_argument(
+        "--display",
+        action="store_true",
+        help="Push rendered image to e-ink display (Raspberry Pi only)",
+    )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Delete saved calendar feeds, then run setup again",
+    )
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Skip the confirmation prompt for --reset",
+    )
+    parser.add_argument(
+        "--setup",
+        action="store_true",
+        help="Serve the calendar setup form even if feeds are already configured",
+    )
+    parser.add_argument(
+        "--no-setup",
+        action="store_true",
+        help="Never wait on the setup form, even with no feeds (for the timer)",
+    )
     args = parser.parse_args()
 
+    # Configured here, not at import, so importing this module (tests, tools)
+    # never changes the importer's logging.
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    log.info("gcal-epd %s", version())
     config = load_config()
-    config_path = _PROJECT_ROOT / "config.toml"
 
-    gcal_sources = [s for s in config.get("sources", []) if s["type"] == "google_calendar"]
-    calendar_ids = [cid for s in gcal_sources for cid in s.get("calendar_ids", [])]
+    if args.reset and not _confirm_reset(config, assume_yes=args.yes):
+        log.info("Reset cancelled — feeds left untouched.")
+        return
 
-    if args.setup or not calendar_ids:
-        from gcal_epd.infrastructure.google_calendar.setup import run_setup
-        run_setup(config, config_path, display=args.display, email=args.email)
-        config = load_config()
+    # Links typed into the Wi-Fi hotspot form could not be checked offline;
+    # check them now, and on failure reopen setup saying why.
+    pending_error = ""
+    pending = pending_feeds_path(feeds_file(config))
+    if pending.exists():
+        pending_error = apply_pending_feeds(pending, feeds_file(config))
+        if pending_error:
+            log.warning("Calendar links from Wi-Fi setup failed: %s", pending_error)
 
-    try:
-        event_repos = _build_event_repos(config)
-        weather_repo = _build_weather_repo(config)
-        run_display(
-            event_repos=event_repos,
-            weather_repo=weather_repo,
-            config=config,
-            project_root=_PROJECT_ROOT,
-            push_display=args.display,
-        )
-    except HttpError as error:
-        log.error("API error: %s", error)
+    event_repos = _build_event_repos(config)
+
+    # With no feeds there is nothing to show, so onboarding runs on its own —
+    # unless this is the scheduled refresh, which must not wait on a person
+    # (its unit has a short timeout; epd-feed-setup.service owns the form).
+    needs_setup = (not event_repos or pending_error) and not args.no_setup
+    if args.setup or args.reset or needs_setup:
+        if run_onboarding(config, push_display=args.display, error=pending_error):
+            event_repos = _build_event_repos(config)
+        else:
+            log.warning("No calendar feeds configured — rendering an empty calendar.")
+
+    run_display(
+        event_repos=event_repos,
+        weather_repo=_build_weather_repo(config),
+        config=config,
+        project_root=PROJECT_ROOT,
+        push_display=args.display,
+        data_dir=DATA_DIR,
+    )
 
 
 if __name__ == "__main__":

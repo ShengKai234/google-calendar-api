@@ -1,0 +1,391 @@
+**English** | [繁體中文](README.zh-TW.md)
+
+# e-Paper Calendar
+
+A Raspberry Pi drives a Waveshare 7.3" 7-color e-Paper panel showing your
+upcoming events and today's weather. Events come from published iCalendar
+(`.ics`) feeds — Apple, Google, or anything else that serves one — so there is
+no Google Cloud project, API key or OAuth to set up.
+
+A new display is set up from a phone: it offers a Wi-Fi hotspot when it has
+no network, and a QR code for your calendar links when it has none. No
+keyboard or SSH needed after the first install.
+
+---
+
+## Hardware
+
+| Component | Spec |
+|-----------|------|
+| Raspberry Pi | Pi Zero WH (any Pi with the 40-pin header works) |
+| Storage | microSD, 8GB or more |
+| Display | [Waveshare 7.3inch e-Paper HAT (F)](https://www.waveshare.net/shop/7.3inch-e-Paper-HAT-F.htm) — 800×480, 7-color |
+| OS | Raspberry Pi OS Lite, Bookworm or later (32-bit on a Pi Zero) |
+
+The Pi Zero W has a single 2.4GHz Wi-Fi radio: it cannot join 5GHz-only
+networks.
+
+---
+
+## How it works
+
+```mermaid
+flowchart TB
+  BOOT(["Boot"]) --> W["epd-wifi-setup<br/>hotspot if there is no network"]
+  W -->|"online"| C{"Calendar links saved,<br/>none waiting to check?"}
+  C -->|"no"| F["epd-feed-setup<br/>check new links,<br/>or QR + PIN to add them"]
+  C -->|"yes"| G["gcal-epd<br/>draw the calendar"]
+  T(["Timer · 07:00 / 19:00"]) --> G
+```
+
+Three systemd units do the work; the code behind them, and why it is split
+the way it is, is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+---
+
+## Setting up a new display
+
+The quickest way needs no network on the Pi: write the card with Imager,
+then `bash deploy/sdcard/prepare.sh --release vX.Y.Z` adds the calendar to it,
+and the first boot installs it. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md),
+which also covers publishing and installing releases. The steps below set
+up a display from a git checkout instead, for development.
+
+### 1. Flash the SD card
+
+Use [Raspberry Pi Imager](https://www.raspberrypi.com/software/): choose your
+Pi model and **Raspberry Pi OS Lite**. In OS customisation, set a username,
+turn on SSH, and set the time zone. Entering Wi-Fi is optional — the display
+can be put on Wi-Fi from a phone later.
+
+### 2. Install the software
+
+On the Pi, once, over SSH or a keyboard:
+
+```bash
+git clone https://github.com/ShengKai234/google-calendar-api.git
+cd google-calendar-api
+bash deploy/setup.sh      # system packages, SPI, .venv, Python packages
+bash deploy/install.sh    # systemd units, timer, watchdog
+```
+
+`install.sh` fills the unit templates in with this checkout's path, its
+owner, and the feeds file named in `config.toml`, so the checkout can live
+anywhere and belong to any user.
+
+### 3. Reboot
+
+```bash
+sudo reboot
+```
+
+From here the panel guides you:
+
+- **No network** → the Wi-Fi setup screen. See [Wi-Fi setup](#wi-fi-setup).
+- **No calendar links yet** → the calendar setup screen. See
+  [Calendar feeds](#calendar-feeds).
+- **Both in place** → your calendar.
+
+---
+
+## Wi-Fi setup
+
+At every boot the Pi gives NetworkManager 60 seconds to join a saved network.
+If none answers, it becomes a hotspot and the panel shows two QR codes:
+
+1. **Join the hotspot** — `ePaper-Setup-XXXX`, with a fresh random password
+   printed beside it for phones that cannot scan a Wi-Fi QR.
+2. **Open the form** — `http://10.42.0.1`. Pick your network, enter the
+   password, and optionally paste your calendar links in the same form.
+   Connect.
+
+Links entered here cannot be checked on the hotspot, which has no
+internet, so they are checked as soon as the Pi is online. If they all
+work, the calendar appears without a second scan. If one fails, the
+calendar setup screen opens instead, with the reason in red, and any
+calendars that worked before are kept.
+
+The hotspot closes while the Pi tries the network. A wrong password brings
+the same hotspot back with the error in red; your phone rejoins it on its
+own, so reload the page and try again.
+
+While it waits, the Pi drops the hotspot every 5 minutes to retry saved
+networks — a router that boots slower than the Pi does not strand the
+display — but never within 2 minutes of someone using the form.
+
+---
+
+## Calendar feeds
+
+When the Pi is online but has no calendar links — or a link from the Wi-Fi
+form failed — the panel shows a QR code, the Pi's address and a 6-digit PIN,
+plus the reason in red when it reopened after a failure. Scan, paste your feed links, enter the
+PIN. Each link is fetched before it is saved, so a typo fails on the form
+rather than as an empty calendar later. The form stays open 10 minutes.
+
+> **Treat feed URLs like passwords.** Anyone who has one can read that
+> calendar. They are stored in `ics_feeds.toml`, readable only by you and
+> never committed. To revoke a leaked one, re-publish (Apple) or reset the
+> private address (Google); the old link stops working.
+
+### Where to find the URL
+
+| Source | Path |
+|--------|------|
+| Apple Calendar | Calendar app → right-click calendar → Share Calendar → tick **Public Calendar** → Copy Link (`webcal://…`) |
+| Google Calendar | Settings → pick a calendar → Integrate calendar → **Secret address in iCal format** |
+
+Any other publisher works too — Outlook, Fastmail, a university timetable —
+as long as it serves an `.ics` URL.
+
+### Editing the file by hand
+
+```bash
+cp ics_feeds.example.toml ics_feeds.toml
+nano ics_feeds.toml
+chmod 600 ics_feeds.toml
+```
+
+```toml
+[[feed]]
+name = "Apple"                       # optional; defaults to the feed's own name
+url  = "webcal://p1-caldav.icloud.com/published/2/..."
+
+[[feed]]
+url  = "https://calendar.google.com/calendar/ical/.../basic.ics"
+```
+
+Add as many `[[feed]]` blocks as you like; they are merged into one
+chronological list.
+
+### Starting over
+
+```bash
+.venv/bin/python -m gcal_epd.main --reset --display
+```
+
+Deletes `ics_feeds.toml` after confirming, then reopens the setup form. Add
+`--yes` to skip the prompt.
+
+---
+
+## Configuration
+
+`config.toml` (tracked) holds everything except the feed URLs:
+
+```toml
+[[sources]]
+type = "ics"
+feeds_file = "ics_feeds.toml"         # where your feed URLs live (gitignored)
+days_ahead = 14
+max_results_per_calendar = 100
+
+[[sources]]
+type = "open_meteo"                   # weather; no API key needed
+latitude = 25.0330
+longitude = 121.5654
+location = "Taipei"
+
+[display]
+output_path = "preview.png"           # last rendered image
+font_path = "assets/fonts/NotoSansCJKtc-Regular.otf"
+```
+
+Relative paths are taken from the checkout. If you change `feeds_file`,
+re-run `bash deploy/install.sh` so the units watch the new file.
+
+To change a setting on one display only (another city, say), put just that
+setting in `config.local.toml` next to the feeds file; it is laid over
+`config.toml` and is not tracked. Tables merge key by key; a list such as
+`[[sources]]` replaces the shipped one whole. An update can then change the
+defaults without overwriting your changes.
+
+The feeds file, `config.local.toml` and the preview are this display's
+*data*. In a git checkout they sit in the checkout. In an installed release
+(see [Install as a release](#install-as-a-release)) they sit in
+`/opt/e-pages/data/`, apart from the code, so an update never touches them.
+
+---
+
+## Schedule
+
+The calendar refreshes at **07:00 and 19:00 Taiwan time**, and once more at
+boot if a run was missed while the Pi was off. The times are set in
+`deploy/gcal-epd.timer`:
+
+```ini
+OnCalendar=*-*-* 07:00:00 Asia/Taipei
+OnCalendar=*-*-* 19:00:00 Asia/Taipei
+```
+
+The time zone is written into the timer, so the Pi's own time zone does not
+change when it runs — but setting it to match keeps log timestamps readable:
+`sudo timedatectl set-timezone Asia/Taipei`. After editing the timer, run
+`bash deploy/install.sh` again.
+
+---
+
+## Running by hand
+
+```bash
+.venv/bin/python -m gcal_epd.main                  # render preview.png only
+.venv/bin/python -m gcal_epd.main --display        # render and push to the panel
+.venv/bin/python -m gcal_epd.main --setup --display  # open the calendar setup form
+.venv/bin/python test_display.py                   # panel test: color swatches
+```
+
+Through systemd instead, with output in the journal:
+
+```bash
+sudo systemctl start gcal-epd.service
+journalctl -u gcal-epd.service -n 50
+systemctl list-timers gcal-epd.timer      # next scheduled run
+```
+
+---
+
+## Maintenance
+
+### Update the code
+
+```bash
+git pull
+bash deploy/install.sh
+```
+
+### Install as a release
+
+Over-the-air updates install the app as *releases*, side by side, with an
+atomic switch and a way back; a display installed this way checks for a
+newer signed release once a day (see
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#update-a-running-display)):
+
+```
+/opt/e-pages/releases/<version>/   code and its own .venv (root-owned)
+/opt/e-pages/current  -> releases/<version>   what the units run
+/opt/e-pages/previous -> releases/<version>   what rollback returns to
+/opt/e-pages/data/                 feeds, config.local.toml, preview
+```
+
+To move a display from its checkout to this layout, on the Pi:
+
+```bash
+cd ~/google-calendar-api && git pull
+bash deploy/install-release.sh --migrate-from ~/google-calendar-api
+```
+
+It installs the checkout's committed `HEAD` (never uncommitted edits or
+gitignored files), builds its venv, and switches only once the new release
+imports and reports its version; then it points the units at
+`/opt/e-pages/current`. The feeds file and other settings are copied
+(not moved) into `data/`; the old checkout is left as it was.
+
+```bash
+sudo python3 -m gcal_epd.releases list        # with PYTHONPATH=src, from a checkout
+sudo python3 -m gcal_epd.releases rollback    # back to the previous release
+sudo python3 -m gcal_epd.releases switch 0.2.0
+```
+
+### Update dependencies
+
+```bash
+.venv/bin/pip install -r requirements-to-freeze.txt --upgrade
+.venv/bin/pip freeze > requirements.txt
+```
+
+### Rotate a calendar feed URL
+
+Revoke it at the source — the old link stops working immediately:
+
+- **Apple**: Calendar → right-click calendar → Share Calendar → untick and
+  re-tick **Public Calendar** to mint a new link.
+- **Google**: Settings → calendar → Integrate calendar → **Reset private URLs**.
+
+Then replace it with [Starting over](#starting-over) or by editing
+`ics_feeds.toml`.
+
+### Change the Wi-Fi network
+
+Start Wi-Fi setup by hand. Over SSH, run it detached — the SSH session drops
+along with the Wi-Fi and would take a foreground run with it:
+
+```bash
+sudo systemd-run --working-directory=$PWD \
+    $PWD/.venv/bin/python -m gcal_epd.wifi_setup --display --force \
+    --start-unit gcal-epd.service --start-unit epd-feed-setup.service
+```
+
+The `--start-unit` options hand over to the calendar afterwards, as at boot.
+Without them, links entered on the form would wait unchecked — and hold back
+the scheduled refresh — until the next reboot.
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| `lgpio.error: 'GPIO busy'` | Another process holds the panel — a setup form waiting, or a refresh in progress. Wait for it, or stop it with `sudo systemctl stop epd-feed-setup gcal-epd`. |
+| Panel never updates after boot | `journalctl -b -u epd-wifi-setup -u epd-feed-setup -u gcal-epd` shows each step of the boot hand-over. |
+| A unit is "skipped because of an unmet condition" | Expected: `gcal-epd` waits for calendar links, `epd-feed-setup` stands down once they exist. |
+| Hotspot never appears | `journalctl -b -u epd-wifi-setup`. Another interface on `10.42.0.x` stops it, and the log names the interface. |
+| Calendar titles show as boxes | The CJK font was not found; check `font_path` in `config.toml`. |
+
+---
+
+## Project structure
+
+```
+google-calendar-api/
+├── src/gcal_epd/
+│   ├── main.py              # Entry: calendar refresh and setup (python -m gcal_epd.main)
+│   ├── wifi_setup.py        # Entry: Wi-Fi hotspot setup, runs at boot as root
+│   ├── releases.py          # Entry: install / switch / roll back releases (root)
+│   ├── build_release.py     # Entry: build a release's published files (Mac / CI)
+│   ├── config.py            # Code and data roots, config.toml (+ local), path helpers
+│   ├── version.py           # Which version is running
+│   ├── domain/              # CalendarEvent / WeatherInfo + repository Protocols
+│   ├── application/
+│   │   ├── display_service.py  # Fetch → render → panel
+│   │   └── setup_service.py    # Calendar setup form → panel
+│   ├── infrastructure/
+│   │   ├── feeds_file.py    # Read / write / reset ics_feeds.toml
+│   │   ├── ics/             # iCalendar feed repository
+│   │   ├── open_meteo/      # Weather repository
+│   │   ├── onboarding/      # Calendar setup web form (LAN, PIN)
+│   │   ├── release/         # Release layout, build, migration from a checkout
+│   │   └── wifi/            # NetworkManager wrapper + hotspot web form
+│   ├── render/              # layout.py, draw.py, wifi_screens.py
+│   └── epd.py               # Push an image to the panel
+├── vendor/waveshare_epd/    # Waveshare driver
+├── assets/fonts/            # NotoSansCJKtc-Regular.otf
+├── deploy/                  # setup.sh, install.sh, install-release.sh, unit templates
+│   ├── sdcard/              # prepare.sh (Mac), firstboot.sh (Pi), debs.lock
+│   └── release/             # sign.sh, allowed_signers
+├── docs/                    # Architecture, deployment
+├── tests/
+├── config.toml              # Runtime configuration (tracked)
+├── ics_feeds.example.toml   # Template for ics_feeds.toml (gitignored — secret)
+└── test_display.py          # Standalone panel test
+```
+
+---
+
+## Development
+
+```bash
+python3 -m venv venv
+venv/bin/pip install -e ".[dev]"
+venv/bin/python -m pytest
+venv/bin/python -m gcal_epd.main    # renders preview.png; no panel needed
+```
+
+Documentation exists in English and Traditional Chinese. English is the
+source; when you change a section, change the same section in the
+`.zh-TW.md` file. A test checks the two keep the same headings and
+diagrams.
+
+CI (`.github/workflows/ci.yml`) runs the same `pytest -q` on Python 3.11
+(dev) and 3.13 (the Pi) for every pull request, and shellchecks
+`deploy/*.sh` and `deploy/*/*.sh`. A `vX.Y.Z` tag runs
+`.github/workflows/release.yml`; see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).

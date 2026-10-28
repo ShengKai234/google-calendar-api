@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [develop, main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11: dev Mac venv. 3.13: Raspberry Pi OS Trixie on the device.
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            pyproject.toml
+      # Same pinned set the Pi installs. No hardware libs (spidev, gpiozero,
+      # lgpio): tests never load the Waveshare driver.
+      - run: pip install -r requirements.txt pytest pytest-mock
+      - run: pytest -q
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Warning level: setup.sh sources the venv it creates at run time,
+      # which shellcheck can only report as info (SC1091).
+      - run: shellcheck --severity=warning deploy/*.sh deploy/*/*.sh

@@ -1,0 +1,51 @@
+# Release: push a tag vX.Y.Z (pyproject.toml's version) and this builds the
+# release's files (python -m gcal_epd.build_release) and publishes them as a
+# GitHub pre-release: the beta channel. Then, on the Mac:
+#   bash deploy/release/sign.sh vX.Y.Z           # sign it
+#   gh release edit vX.Y.Z --prerelease=false --latest   # promote to stable
+# Run by hand from the Actions tab to build without publishing; the files
+# are then kept as a workflow artifact. See docs/DEPLOYMENT.md.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the release is named from the tag on HEAD
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements.txt pytest pytest-mock
+      - run: pytest -q
+      - name: The tag matches pyproject.toml
+        if: github.ref_type == 'tag'
+        run: |
+          version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "Tag $GITHUB_REF_NAME, but pyproject.toml says $version."; exit 1
+          fi
+      - name: Build
+        run: PYTHONPATH=src python -m gcal_epd.build_release --out dist/release
+      - uses: actions/upload-artifact@v4
+        if: github.ref_type != 'tag'
+        with:
+          name: e-pages-release
+          path: dist/release/
+          retention-days: 7
+      - name: Publish as a pre-release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/release/* \
+            --title "$GITHUB_REF_NAME" --prerelease --generate-notes

@@ -170,3 +170,10 @@ client_secret_*
 token.json
 credentials.json
 service_account.json
+
+# Calendar feed URLs (contain private tokens)
+ics_feeds.toml
+ics_feeds.pending.toml
+
+# This display's own settings on top of config.toml (see config.py)
+config.local.toml

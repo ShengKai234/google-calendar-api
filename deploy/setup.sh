@@ -45,26 +45,37 @@ echo "[4/5] Installing Python packages..."
 . "$PROJECT_DIR/.venv/bin/activate"
 pip install --quiet -e .
 pip install --quiet -r "$PROJECT_DIR/requirements.txt"
+# The Waveshare driver imports these; they are not in requirements.txt
+# because they only exist on the Pi. The venv is built without
+# --system-site-packages, so Pi OS's copies are not visible to it.
+if grep -q "Raspberry Pi" /proc/cpuinfo 2>/dev/null; then
+    pip install --quiet spidev gpiozero
+    echo "      Installed spidev + gpiozero (e-Paper driver)."
+fi
 echo "      Done."
 
-# --- Check credentials ---
-echo "[5/5] Checking credentials..."
-if [ -f "$PROJECT_DIR/service_account.json" ]; then
-    echo "      service_account.json found."
+# --- Check calendar feeds ---
+echo "[5/5] Checking calendar feeds..."
+if [ -f "$PROJECT_DIR/ics_feeds.toml" ]; then
+    echo "      ics_feeds.toml found."
 else
     echo ""
-    echo "  [!] service_account.json not found."
-    echo "      Copy it from your laptop:"
-    echo "        scp service_account.json admin@<pi-ip>:$PROJECT_DIR/"
+    echo "  [!] ics_feeds.toml not found."
+    echo "      Copy the template and add your feed URLs:"
+    echo "        cp ics_feeds.example.toml ics_feeds.toml"
+    echo "      Or copy your existing one from your laptop:"
+    echo "        scp ics_feeds.toml admin@<pi-ip>:$PROJECT_DIR/"
 fi
 
 echo ""
 echo "=== Setup complete ==="
 echo ""
 echo "Next steps:"
-echo "  1. Copy service_account.json to this Pi (if not done):"
-echo "       scp service_account.json admin@<pi-ip>:$PROJECT_DIR/"
-echo "  2. Run calendar sharing setup (draws QR on e-paper):"
-echo "       bash deploy/auth.sh --display"
+echo "  1. Add your calendar feeds — either scan the QR on the panel:"
+echo "       .venv/bin/python -m gcal_epd.main --setup --display"
+echo "     or edit the file directly:"
+echo "       cp ics_feeds.example.toml ics_feeds.toml && nano ics_feeds.toml"
+echo "  2. Render once to check it works:"
+echo "       .venv/bin/python -m gcal_epd.main"
 echo "  3. Install systemd timer for automatic refresh:"
 echo "       bash deploy/install.sh"

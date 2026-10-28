@@ -1,17 +1,25 @@
+# Template — deploy/install.sh fills in @PROJECT_DIR@, @USER@, @FEEDS_FILE@ and @PENDING_FILE@.
+# Install with that script; a copy made by hand will not start.
 [Unit]
 Description=Google Calendar e-Paper Display
 After=network-online.target
 Wants=network-online.target
+# Scheduled refresh only once calendars are set up and no links from the
+# Wi-Fi form wait to be checked; otherwise epd-feed-setup.service runs.
+ConditionPathExists=@FEEDS_FILE@
+ConditionPathExists=!@PENDING_FILE@
 
 [Service]
 Type=oneshot
-User=admin
-WorkingDirectory=/home/admin/google-calendar-api
+User=@USER@
+WorkingDirectory=@PROJECT_DIR@
 
-ExecStart=/home/admin/google-calendar-api/.venv/bin/python -m gcal_epd.main --display
+ExecStart=@PROJECT_DIR@/.venv/bin/python -m gcal_epd.main --display --no-setup
 
 # Shutdown after display refresh (e-ink retains image when powered off)
-ExecStartPost=/sbin/shutdown -h now
+# Disabled: Pi Zero has no RTC wake-up, so it would stay off and miss the
+# next timer run. Re-enable only with external power scheduling (e.g. Witty Pi).
+# ExecStartPost=/sbin/shutdown -h now
 
 # Kill if taking longer than 120 seconds
 TimeoutStartSec=120
