@@ -91,7 +91,8 @@ bash deploy/sdcard/prepare.sh --bundle dist/<label>/e-pages-<label>-sdcard.zip
 `prepare.sh` then:
 
 1. copies `epd-bundle/` to the boot partition (about 25 MB);
-2. turns SPI on in `config.txt` (the panel's bus);
+2. turns SPI (the panel's bus) and I2C (a PiSugar battery's) on in
+   `config.txt`;
 3. sets the Wi-Fi country in `cmdline.txt` (`--country`, default `TW`);
 4. adds to Imager's `user-data`: run `epd-bundle/firstboot.sh` as the
    Imager user, and reboot once it has finished.
@@ -107,8 +108,11 @@ Eject the card, put it in the Pi, power it on. The first boot takes about
 
 1. cloud-init creates the user, then runs `firstboot.sh`;
 2. `firstboot.sh` installs `debs/` with `dpkg` (Pillow's libraries,
-   watchdog), then runs the release installer with the bundled wheels and
-   no network;
+   watchdog, PiSugar's `pisugar-server` and `pisugar-poweroff`), then runs
+   the release installer with the bundled wheels and no network.
+   pisugar-server is set up for a PiSugar 3, listening on 127.0.0.1 only,
+   with no web page (its defaults would let anyone on the network power the
+   Pi off). Without a PiSugar it finds no board and the Pi stays always on;
 3. the installer builds `/opt/e-pages/releases/<label>`, switches to it and
    installs the systemd units;
 4. cloud-init reboots.
@@ -256,6 +260,10 @@ security update. Re-pin, review the diff, commit:
 venv/bin/python -m gcal_epd.build_release --refresh-debs
 git diff deploy/sdcard/debs.lock
 ```
+
+The PiSugar packages are pinned by URL (PiSugar's GitHub releases) and
+left alone by `--refresh-debs`: to move to a newer version, change both
+URLs and SHA-256 by hand and test the card.
 
 ---
 

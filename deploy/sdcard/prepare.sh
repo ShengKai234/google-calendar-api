@@ -12,7 +12,7 @@
 #   --country CC      Wi-Fi country for the hotspot (default: TW)
 #   --allow-unsigned  accept a release whose SHA256SUMS is not signed yet
 #
-# It copies epd-bundle/ to the boot partition, turns SPI on, sets the Wi-Fi
+# It copies epd-bundle/ to the boot partition, turns SPI and I2C on, sets the Wi-Fi
 # country, and adds to cloud-init's user-data: run epd-bundle/firstboot.sh
 # as the user Imager created, then reboot. See docs/DEPLOYMENT.md.
 set -euo pipefail
@@ -109,16 +109,20 @@ find "$BOOT/epd-bundle" -name '._*' -delete
 # Rewrite a file in place (keeps its owner and mode, works on FAT).
 rewrite() { cat "$2" > "$1"; }
 
-echo "[2/4] SPI on (the panel)..."
+echo "[2/4] SPI (the panel) and I2C (a PiSugar battery) on..."
 CONFIG="$BOOT/config.txt"
-if ! grep -q '^dtparam=spi=on' "$CONFIG"; then
-    if grep -q '^#dtparam=spi=on' "$CONFIG"; then
-        sed 's/^#dtparam=spi=on/dtparam=spi=on/' "$CONFIG" > "$WORK/config.txt"
+# Uncomment `dtparam=NAME=on`, or add it under [all].
+dtparam_on() {
+    grep -q "^dtparam=$1=on" "$CONFIG" && return 0
+    if grep -q "^#dtparam=$1=on" "$CONFIG"; then
+        sed "s/^#dtparam=$1=on/dtparam=$1=on/" "$CONFIG" > "$WORK/config.txt"
     else
-        { cat "$CONFIG"; printf '\n[all]\ndtparam=spi=on\n'; } > "$WORK/config.txt"
+        { cat "$CONFIG"; printf '\n[all]\ndtparam=%s=on\n' "$1"; } > "$WORK/config.txt"
     fi
     rewrite "$CONFIG" "$WORK/config.txt"
-fi
+}
+dtparam_on spi
+dtparam_on i2c_arm
 
 echo "[3/4] Wi-Fi country $COUNTRY..."
 CMDLINE="$BOOT/cmdline.txt"

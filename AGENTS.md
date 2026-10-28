@@ -50,3 +50,8 @@ everything about installing it.
   readable from the Mac with the card plugged in.
 - A display with PiSugar power management may power itself off after each
   refresh; an open SSH session keeps it on.
+- A new card ships pisugar-server (PiSugar 3, 127.0.0.1 only, no web page;
+  see deploy/sdcard/firstboot.sh). Never switch its web page on or listen
+  on 0.0.0.0: anyone on the network could power the Pi off. Updates run
+  only a minute after the last wake-up slot (default 19:01), never in the
+  morning; the power manager waits for them.
