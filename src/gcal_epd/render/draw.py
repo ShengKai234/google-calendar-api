@@ -275,15 +275,13 @@ def _draw_header(
             _draw_weather_icon(draw, kind, icon_x, mid - icon_size / 2, icon_size)
 
 
-def _draw_footer(draw: ImageDraw.ImageDraw, fonts: dict, now: datetime.datetime) -> None:
-    _text(
-        draw,
-        (COL_DATE_X, HEIGHT - FOOTER_H / 2 - 2),
-        f"Updated {now.strftime('%H:%M')}",
-        fonts["footer"],
-        FG,
-        anchor="lm",
-    )
+def _draw_footer(draw: ImageDraw.ImageDraw, fonts: dict, now: datetime.datetime,
+                 version: str = "") -> None:
+    y = HEIGHT - FOOTER_H / 2 - 2
+    _text(draw, (COL_DATE_X, y), f"Updated {now.strftime('%H:%M')}", fonts["footer"], FG,
+          anchor="lm")
+    if version:   # bottom right: which release drew this
+        _text(draw, (WIDTH - PADDING, y), f"v{version}", fonts["footer"], FG, anchor="rm")
 
 
 def render(
@@ -291,6 +289,7 @@ def render(
     weather: WeatherInfo | None = None,
     output_path: str = "preview.png",
     font_path: str = "",
+    version: str = "",
 ) -> Image.Image:
     img = Image.new("RGB", (WIDTH, HEIGHT), BG)
     draw = ImageDraw.Draw(img)
@@ -325,7 +324,7 @@ def render(
             fill=FG, width=1,
         )
 
-    _draw_footer(draw, fonts, now)
+    _draw_footer(draw, fonts, now, version)
 
     img.save(output_path)
     return img
