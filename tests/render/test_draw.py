@@ -13,7 +13,7 @@ from gcal_epd.render.draw import (
     render,
     render_setup,
 )
-from gcal_epd.render.layout import BG, HEIGHT, PALETTE, WIDTH, TW_TZ
+from gcal_epd.render.layout import BG, FOOTER_H, HEIGHT, PALETTE, WIDTH, TW_TZ
 
 
 def _event(start: str, title: str = "Meeting", cal: str = "Work") -> CalendarEvent:
@@ -187,3 +187,20 @@ def test_render_setup_error_is_drawn_in_red(tmp_path):
                           error="The link at h.example is not a calendar (iCal) file.")
     assert PALETTE["red"] not in colors(plain)
     assert PALETTE["red"] in colors(failed)
+
+
+# --- footer ---
+
+def _bottom_right(img):
+    box = (WIDTH // 2, HEIGHT - FOOTER_H, WIDTH, HEIGHT)
+    return {c for _, c in img.crop(box).getcolors(maxcolors=WIDTH * HEIGHT)}
+
+
+def test_version_is_drawn_bottom_right(tmp_path):
+    img = render([], version="0.2.1", output_path=str(tmp_path / "out.png"))
+    assert PALETTE["white"] in _bottom_right(img)
+
+
+def test_no_version_leaves_bottom_right_blank(tmp_path):
+    img = render([], output_path=str(tmp_path / "out.png"))
+    assert _bottom_right(img) == {BG}
