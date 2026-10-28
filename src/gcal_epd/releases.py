@@ -46,6 +46,7 @@ log = logging.getLogger(__name__)
 KEEP = 2
 # The new release must render the calendar within this long after an update.
 HEALTH_TIMEOUT = 300
+REFRESH_UNIT = "gcal-epd.service"
 # A release whose build fails this many times is not tried again.
 MAX_ATTEMPTS = 3
 DOWNLOAD_PREFIX = ".download-"
@@ -161,6 +162,16 @@ def health_check(layout: ReleaseLayout, user: str, run=installer.run) -> bool:
     return True
 
 
+def _refresh_panel(run=installer.run) -> None:
+    """Draw the calendar with the new release now, not at the next slot. On
+    a battery Pi the power manager waits for this refresh before powering
+    off. --no-block: the refresh runs on after the update has finished."""
+    try:
+        run(["systemctl", "start", "--no-block", REFRESH_UNIT])
+    except InstallError as e:
+        log.warning("Could not start %s: %s", REFRESH_UNIT, e)
+
+
 def _settings(layout: ReleaseLayout) -> updater.Settings:
     """[update] from the running release's config.toml and this display's
     config.local.toml."""
@@ -238,6 +249,8 @@ def _apply(cand, current, layout, state, run, fetch, download, now, no_units) ->
     if health_check(layout, user, run):
         state.updated_at, state.updated_to = now(), cand.label
         log.info("Updated %s -> %s.", current, cand.label)
+        if not no_units:
+            _refresh_panel(run)
         return cand.label
     switch(SimpleNamespace(version=None, user=user, no_units=no_units), layout, run)
     state.rejected.append(cand.label)

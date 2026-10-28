@@ -52,7 +52,8 @@ def test_fresh_card_gets_bundle_spi_country_and_first_boot(card, bundle):
     result = prepare(card, bundle, "--country", "JP")
     assert result.returncode == 0, result.stderr
     assert (card / "epd-bundle" / "wheels" / "a.whl").is_file()
-    assert "\ndtparam=spi=on\n" in (card / "config.txt").read_text()
+    config = (card / "config.txt").read_text()
+    assert {"dtparam=spi=on", "dtparam=i2c_arm=on"} <= set(config.splitlines())
     assert (card / "cmdline.txt").read_text() == \
         "console=tty1 root=PARTUUID=x rootwait cfg80211.ieee80211_regdom=JP\n"
     user_data = (card / "user-data").read_text()

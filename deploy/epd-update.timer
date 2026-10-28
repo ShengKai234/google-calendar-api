@@ -2,11 +2,15 @@
 Description=Check for a calendar update once a day
 
 [Timer]
-# 03:00 Taiwan time, spread over an hour so displays do not all ask at once.
-OnCalendar=*-*-* 03:00:00 Asia/Taipei
-RandomizedDelaySec=1h
-# Missed (the Pi was off): run soon after the next boot instead.
-Persistent=true
+# Once a day, a minute after the evening refresh (19:00 Taiwan time), when
+# the display is awake anyway; epd-update.service also waits for that
+# refresh to end. `power_manager apply-schedule` moves this to a minute
+# after the LAST slot of the power schedule (a drop-in), so it follows the
+# times set on the setup form. Never at the morning slot.
+OnCalendar=*-*-* 19:01:00 Asia/Taipei
+# Missed (a battery Pi was off): wait for the next evening, not the next
+# boot, which is the morning one.
+Persistent=false
 
 [Install]
 WantedBy=timers.target

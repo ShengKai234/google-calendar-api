@@ -1,0 +1,14 @@
+# Template — deploy/install.sh fills in @PROJECT_DIR@, @USER@, @FEEDS_FILE@, @PENDING_FILE@ and @SCHEDULE_FILE@.
+# Install with that script; a copy made by hand will not start.
+[Unit]
+Description=Point gcal-epd.timer at the e-Paper power schedule
+
+[Service]
+Type=oneshot
+# Root: writes /etc/systemd/system/gcal-epd.timer.d/ and reloads systemd.
+User=root
+WorkingDirectory=@PROJECT_DIR@
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=@PROJECT_DIR@/.venv/bin/python -m gcal_epd.power_manager apply-schedule
+StandardOutput=journal
+StandardError=journal

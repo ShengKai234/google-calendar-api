@@ -11,6 +11,13 @@
 # The list is what `apt-get install --download-only` fetched for these
 # packages inside the 2026-10-06 Lite image: none of their dependencies
 # was missing. Re-check it when the base image changes.
+#
+# Last, pinned by URL (--refresh-debs leaves them alone): PiSugar's own
+# daemon and shutdown hook for the PiSugar 3 battery, from
+# github.com/PiSugar/pisugar-power-manager-rs releases. The armhf build is
+# the one PiSugar's installer picks on a Pi Zero. firstboot.sh answers
+# their debconf questions (model; listen on 127.0.0.1, no web page).
+# To move to a newer version: change both URLs and sha256, test on a card.
 archive http://raspbian.raspberrypi.com/raspbian
 suite trixie
 libfreetype6 2.13.3+dfsg-1+deb13u1 pool/main/f/freetype/libfreetype6_2.13.3+dfsg-1+deb13u1_armhf.deb 01ef8315f78726b48d5f6a892966e3dd3b1dba118e1412605c7b362ece107bb4
@@ -26,3 +33,5 @@ librav1e0.7 0.7.1-9 pool/main/r/rust-rav1e/librav1e0.7_0.7.1-9_armhf.deb 62642d8
 libsvtav1enc2 2.3.0+dfsg-1 pool/main/s/svt-av1/libsvtav1enc2_2.3.0+dfsg-1_armhf.deb 807df3600d5079252d9bcbe4ba5a31b8fc3048e4dee9fa4705cbe58bf204b566
 libyuv0 0.0.1904.20250204-1 pool/main/liby/libyuv/libyuv0_0.0.1904.20250204-1_armhf.deb 4103f68dbe497e8aa127d4085d91d1bf6d57f22adeb30daa5b5d8504011ba43f
 watchdog 5.16-1.1 pool/main/w/watchdog/watchdog_5.16-1.1_armhf.deb 8b87393c05976417f36ad5cf6e278f1e6e7d2603ae78b8daba91c1b5bc317576
+pisugar-server 2.3.5-1 https://github.com/PiSugar/pisugar-power-manager-rs/releases/download/v2.3.5/pisugar-server_2.3.5-1_armhf.deb 69ce378b8cec80ec0bdf2ec10288cc48c209ffb758b55ff22986eaa732150843
+pisugar-poweroff 2.3.5-1 https://github.com/PiSugar/pisugar-power-manager-rs/releases/download/v2.3.5/pisugar-poweroff_2.3.5-1_armhf.deb 8f87ffb4ec8cc2f01b8c2ce6b4a6e3fa411e4c28bded6ac71db81d459f3b95cc

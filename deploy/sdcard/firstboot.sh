@@ -27,8 +27,23 @@ RUN_USER="${EPD_USER:?EPD_USER is not set: say which user runs the app}"
 getent passwd "$RUN_USER" > /dev/null || { echo "No user $RUN_USER on this card."; exit 1; }
 echo "User: $RUN_USER  Bundle: $BUNDLE"
 
-echo "[1/3] System libraries for Pillow, and watchdog..."
-dpkg -i "$BUNDLE"/debs/*.deb
+echo "[1/3] System libraries for Pillow, watchdog and the PiSugar daemon..."
+# PiSugar's packages ask these at install. Its defaults would serve a web
+# page that can power the Pi off, to the whole network, with no password:
+# here it listens on 127.0.0.1 only (gcal_epd.power_manager uses TCP 8423).
+# On a Pi without a PiSugar the daemon finds no board and the power
+# manager keeps the Pi always on.
+debconf-set-selections <<'SEL'
+pisugar-server pisugar-server/model select PiSugar 3
+pisugar-server pisugar-server/address select 127.0.0.1
+pisugar-server pisugar-server/web boolean false
+pisugar-server pisugar-server/tcp boolean true
+pisugar-server pisugar-server/uds boolean false
+pisugar-poweroff pisugar-poweroff/model select PiSugar 3
+SEL
+DEBIAN_FRONTEND=noninteractive dpkg -i "$BUNDLE"/debs/*.deb
+# Their scripts enable a service only when it was enabled before.
+systemctl enable pisugar-server.service pisugar-poweroff.service
 
 echo "[2/3] The calendar, as a release under /opt/e-pages (takes a few minutes)..."
 # The installer is part of the release it installs: run it from a copy.

@@ -91,7 +91,8 @@ bash deploy/sdcard/prepare.sh --bundle dist/<label>/e-pages-<label>-sdcard.zip
 `prepare.sh` then:
 
 1. copies `epd-bundle/` to the boot partition (about 25 MB);
-2. turns SPI on in `config.txt` (the panel's bus);
+2. turns SPI (the panel's bus) and I2C (a PiSugar battery's) on in
+   `config.txt`;
 3. sets the Wi-Fi country in `cmdline.txt` (`--country`, default `TW`);
 4. adds to Imager's `user-data`: run `epd-bundle/firstboot.sh` as the
    Imager user, and reboot once it has finished.
@@ -107,8 +108,11 @@ Eject the card, put it in the Pi, power it on. The first boot takes about
 
 1. cloud-init creates the user, then runs `firstboot.sh`;
 2. `firstboot.sh` installs `debs/` with `dpkg` (Pillow's libraries,
-   watchdog), then runs the release installer with the bundled wheels and
-   no network;
+   watchdog, PiSugar's `pisugar-server` and `pisugar-poweroff`), then runs
+   the release installer with the bundled wheels and no network.
+   pisugar-server is set up for a PiSugar 3, listening on 127.0.0.1 only,
+   with no web page (its defaults would let anyone on the network power the
+   Pi off). Without a PiSugar it finds no board and the Pi stays always on;
 3. the installer builds `/opt/e-pages/releases/<label>`, switches to it and
    installs the systemd units;
 4. cloud-init reboots.
@@ -257,6 +261,10 @@ venv/bin/python -m gcal_epd.build_release --refresh-debs
 git diff deploy/sdcard/debs.lock
 ```
 
+The PiSugar packages are pinned by URL (PiSugar's GitHub releases) and
+left alone by `--refresh-debs`: to move to a newer version, change both
+URLs and SHA-256 by hand and test the card.
+
 ---
 
 ## Update a running display
@@ -264,8 +272,12 @@ git diff deploy/sdcard/debs.lock
 ### Automatic updates
 
 A display installed as a release updates itself. `epd-update.timer` runs
-`python3 -m gcal_epd.releases update` once a day (03:00–04:00 Taiwan time;
-soon after the next boot if the Pi was off), which:
+`python3 -m gcal_epd.releases update` once a day, a minute after the
+evening refresh: 19:01 Taiwan time, or a minute after the last wake-up
+time set on the setup form (`power_manager apply-schedule` writes a
+drop-in). Never at the morning refresh, and a check missed while the Pi
+was off waits for the next evening. On a PiSugar battery the power manager
+stays on for a check due within 10 minutes and while an update runs. It:
 
 1. lists the repository's releases on GitHub;
 2. picks the newest one for the display's channel that is newer than the
@@ -280,7 +292,8 @@ soon after the next boot if the Pi was off), which:
    release and never tries this one again. A release whose build fails
    three times is given up too.
 
-The panel shows the new release at its next scheduled refresh.
+Then it starts a refresh, so the panel shows the new release right away;
+a battery Pi powers off after that refresh.
 
 ### Channel
 
