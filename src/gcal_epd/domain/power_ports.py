@@ -63,6 +63,8 @@ class Activity:
     refreshing: str = ""                    # a refresh that is running, "" if none
     ssh_sessions: int | None = 0            # None: cannot tell
     last_refresh_end: float | None = None   # CLOCK_MONOTONIC seconds, None if none
+    updating: str = ""                      # an update that is running, "" if none
+    update_next: float | None = None        # Unix seconds of the next update check
 
 
 @runtime_checkable

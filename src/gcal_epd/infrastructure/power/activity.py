@@ -9,6 +9,8 @@ from gcal_epd.infrastructure.power.system import System
 
 REFRESH_UNITS = ("gcal-epd.service", "epd-feed-setup.service")
 SETUP_UNITS = ("epd-wifi-setup.service",)
+UPDATE_UNIT = "epd-update.service"
+UPDATE_TIMER = "epd-update.timer"
 
 
 def classify_processes(argvs: list[list[str]]) -> tuple[str, str]:
@@ -47,8 +49,15 @@ class SystemdActivity:
                 refreshing = unit
             if state.last_exit is not None:
                 last_end = max(last_end or state.last_exit, state.last_exit)
+        # Over-the-air updates (installed releases only; elsewhere the timer
+        # is not installed and has no next time).
+        state = self.system.unit_state(UPDATE_UNIT)
+        updating = (f"{UPDATE_UNIT} (state unknown)" if state is None
+                    else UPDATE_UNIT if state.busy else "")
         proc_setup, proc_refresh = classify_processes(self.system.command_lines())
         return Activity(setup=setup or proc_setup,
                         refreshing=refreshing or proc_refresh,
                         ssh_sessions=self.system.remote_sessions(),
-                        last_refresh_end=last_end)
+                        last_refresh_end=last_end,
+                        updating=updating,
+                        update_next=self.system.timer_next(UPDATE_TIMER))

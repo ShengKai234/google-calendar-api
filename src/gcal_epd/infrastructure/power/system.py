@@ -79,6 +79,19 @@ class System:
         return UnitState(props.get("ActiveState", "unknown"),
                          exit_us / 1e6 if exit_us else None)
 
+    def timer_next(self, unit: str) -> float | None:
+        """When `unit` (a timer) next fires, in Unix seconds; None if it is not
+        scheduled, not installed, or systemctl cannot tell."""
+        out = self._cmd("systemctl", "show", unit, "--timestamp=unix",
+                        "-p", "NextElapseUSecRealtime")
+        if out is None:
+            return None
+        value = parse_properties(out).get("NextElapseUSecRealtime", "")
+        try:
+            return float(value[1:]) if value.startswith("@") else None
+        except ValueError:
+            return None
+
     # --- clock ------------------------------------------------------
     def ntp_synchronized(self) -> bool | None:
         out = self._cmd("timedatectl", "show", "-p", "NTPSynchronized", "--value")

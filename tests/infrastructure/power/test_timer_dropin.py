@@ -3,7 +3,8 @@ from datetime import time
 from zoneinfo import ZoneInfo
 
 from gcal_epd.domain.power_schedule import PowerSchedule
-from gcal_epd.infrastructure.power.timer_dropin import render_dropin, write_dropin
+from gcal_epd.infrastructure.power.timer_dropin import (
+    render_dropin, render_update_dropin, update_time, write_dropin)
 
 TPE = ZoneInfo("Asia/Taipei")
 
@@ -32,3 +33,14 @@ def test_disabled_schedule_still_drives_the_timer(tmp_path):
     path = tmp_path / "d.conf"
     write_dropin(PowerSchedule(enabled=False), TPE, path)
     assert "07:00:00" in path.read_text()
+
+
+def test_update_check_runs_once_a_minute_after_the_last_slot():
+    text = render_update_dropin(PowerSchedule(slots=(time(7), time(19))), TPE)
+    lines = [line for line in text.splitlines() if not line.startswith("#")]
+    assert lines == ["[Timer]", "OnCalendar=", "OnCalendar=*-*-* 19:01:00 Asia/Taipei",
+                     "RandomizedDelaySec=0", "Persistent=false"]
+
+
+def test_update_time_wraps_past_midnight():
+    assert update_time(PowerSchedule(slots=(time(23, 59),))) == time(0, 0)

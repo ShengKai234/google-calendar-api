@@ -78,6 +78,10 @@ class PowerService:
             refreshing=busy.refreshing,
             ssh_sessions=busy.ssh_sessions,
             last_refresh=last_refresh,
+            updating=busy.updating,
+            update_due=(None if busy.update_next is None else
+                        datetime.fromtimestamp(busy.update_next, timezone.utc)
+                        .astimezone(self.tz)),
         )
 
     def wait_for_board(self) -> bool:

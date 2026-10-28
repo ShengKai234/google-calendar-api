@@ -46,7 +46,9 @@ class FakeSystem:
             "epd-wifi-setup.service": UnitState("inactive", 40.0),
             "gcal-epd.service": UnitState("inactive", 130.0),
             "epd-feed-setup.service": UnitState("inactive", None),
+            "epd-update.service": UnitState("inactive", None),
         }
+        self.timers = {}
         self.ntp = False
         self.sessions = 0
         self.argvs = []
@@ -56,6 +58,9 @@ class FakeSystem:
 
     def unit_state(self, unit):
         return self.units.get(unit)
+
+    def timer_next(self, unit):
+        return self.timers.get(unit)
 
     def ntp_synchronized(self):
         return self.ntp
@@ -322,12 +327,17 @@ def test_status_survives_pisugar_errors(tmp_path):
 def test_apply_schedule_reloads_only_on_change(tmp_path):
     system = FakeSystem()
     path = tmp_path / "gcal-epd.timer.d" / "power-schedule.conf"
-    assert apply_schedule(PowerSchedule(), TPE, system, path)
-    assert system.reloads == ["daemon-reload", "gcal-epd.timer"]
-    assert not apply_schedule(PowerSchedule(), TPE, system, path)
-    assert system.reloads == ["daemon-reload", "gcal-epd.timer"]
-    assert apply_schedule(PowerSchedule(slots=(time(8),)), TPE, system, path)
-    assert len(system.reloads) == 4
+    update = tmp_path / "epd-update.timer.d" / "power-schedule.conf"
+    assert apply_schedule(PowerSchedule(), TPE, system, path, update)
+    assert system.reloads == ["daemon-reload", "gcal-epd.timer", "epd-update.timer"]
+    assert not apply_schedule(PowerSchedule(), TPE, system, path, update)
+    assert len(system.reloads) == 3
+    # 08:00 only: both timers move.
+    assert apply_schedule(PowerSchedule(slots=(time(8),)), TPE, system, path, update)
+    assert len(system.reloads) == 6
+    # A new morning slot moves the refreshes, not the evening update check.
+    assert apply_schedule(PowerSchedule(slots=(time(6), time(8))), TPE, system, path, update)
+    assert system.reloads[-2:] == ["daemon-reload", "gcal-epd.timer"]
 
 
 def test_no_pisugar_installed_does_not_wait(tmp_path):
@@ -357,3 +367,25 @@ def test_any_activity_probe_will_do(tmp_path):
     s = rig.manager.snapshot()
     assert s.refreshing == "a refresh" and s.last_refresh == at(6, 57, 10)
     assert not decide(s).power_off
+
+
+# --- updates -----------------------------------------------------------
+def test_waits_for_the_evening_update_check_then_for_the_update(tmp_path):
+    """18:55 wake; refresh at 19:00; the update check at 19:01 keeps it on."""
+    rig = Rig(tmp_path, now=at(19, 0, 30), uptime=330.0)
+    rig.system.units["gcal-epd.service"] = UnitState("inactive", 320.0)
+    rig.system.timers["epd-update.timer"] = at(19, 1).timestamp()
+    s = rig.manager.snapshot()
+    assert s.update_due == at(19, 1)
+    rig.t = at(19, 3)  # grace over, but the update is running
+    rig.system.timers["epd-update.timer"] = at(19, 1, day=20).timestamp()
+    rig.system.units["epd-update.service"] = UnitState("activating", None)
+    d = decide(rig.manager.snapshot())
+    assert not d.power_off and "installing an update" in d.reason
+
+
+def test_unknown_update_state_keeps_it_on(tmp_path):
+    rig = Rig(tmp_path, now=at(7, 0), uptime=300.0)
+    assert decide(rig.manager.snapshot()).power_off
+    del rig.system.units["epd-update.service"]
+    assert "state unknown" in decide(rig.manager.snapshot()).reason

@@ -52,6 +52,8 @@ def test_waits_for_a_refresh_that_has_not_finished():
     ({"ssh_sessions": None}, "cannot tell"),
     ({"refreshing": "gcal-epd.service"}, "gcal-epd.service is running"),
     ({"refreshing": "epd-feed-setup.service"}, "epd-feed-setup.service is running"),
+    ({"updating": "epd-update.service"}, "installing an update"),
+    ({"update_due": at(7, 5)}, "update check is due at 07:05"),
 ])
 def test_never_powers_off_when(change, words):
     ready = snap()
@@ -135,3 +137,14 @@ def test_zero_lead():
     s = PowerSchedule(wake_lead_minutes=0)
     d = decide(snap(now=at(7, 4), boot=at(7, 0), refreshed=at(7, 2), schedule=s))
     assert d.power_off
+
+
+# --- decide: updates ----------------------------------------------------
+def test_an_update_check_far_off_or_past_does_not_keep_it_on():
+    assert decide(snap(update_due=at(19, 1))).power_off
+    assert decide(snap(update_due=at(6, 58))).power_off
+
+
+def test_an_update_beats_the_awake_cap():
+    late = snap(now=at(9, 0), refreshed=None, updating="epd-update.service")
+    assert not decide(late).power_off

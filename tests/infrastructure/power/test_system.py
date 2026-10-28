@@ -131,3 +131,17 @@ def test_actions():
 
 def test_poweroff_failure_is_reported():
     assert not System(run=Runner(fail=[("systemctl",)])).poweroff()
+
+
+def test_timer_next():
+    run = Runner({("systemctl", "show", "epd-update.timer"):
+                  "NextElapseUSecRealtime=@1793271660\n"})
+    assert System(run=run).timer_next("epd-update.timer") == 1793271660.0
+    assert run.calls[0] == ["systemctl", "show", "epd-update.timer", "--timestamp=unix",
+                            "-p", "NextElapseUSecRealtime"]
+
+
+@pytest.mark.parametrize("out", ["NextElapseUSecRealtime=\n", "", "NextElapseUSecRealtime=@x\n"])
+def test_timer_next_none_when_not_scheduled(out):
+    assert System(run=Runner({("systemctl",): out})).timer_next("t.timer") is None
+    assert System(run=Runner(fail=[("systemctl",)])).timer_next("t.timer") is None
