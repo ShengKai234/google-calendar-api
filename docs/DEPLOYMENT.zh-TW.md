@@ -211,7 +211,7 @@ git diff deploy/sdcard/debs.lock
 
 ### 自動更新
 
-安裝成 release 的裝置會自己更新。`epd-update.timer` 每天執行一次 `python3 -m gcal_epd.releases update`（台灣時間 03:00–04:00；如果當時 Pi 關機，下次開機後不久就會執行），步驟如下：
+安裝成 release 的裝置會自己更新。`epd-update.timer` 每天執行一次 `python3 -m gcal_epd.releases update`，時間是晚上刷新後一分鐘：台灣時間 19:01，或設定表單上最後一個喚醒時間的一分鐘後（由 `power_manager apply-schedule` 寫入 drop-in）。早上的刷新不會更新；Pi 關機時錯過的檢查會等到隔天晚上。用 PiSugar 電池時，10 分鐘內有更新檢查、或更新正在進行，電源管理都不會關機。步驟如下：
 
 1. 列出 repo 在 GitHub 上的所有 release；
 2. 挑出符合裝置頻道、比目前版本新（絕不降版）、而且之前沒在這台失敗過的最新版本；
@@ -219,7 +219,7 @@ git diff deploy/sdcard/debs.lock
 4. 建置並切換過去，跟一般安裝一樣（新版本能 import 之前，舊版本照常運作）；
 5. 用新版本以 app 使用者身分畫一次日曆，但不推到面板。如果當掉或卡住，就 rollback 回上一個版本，之後也不會再試這個版本。建置連續失敗三次的版本同樣會放棄。
 
-面板會在下一次排程刷新時顯示新版本。
+接著立刻刷新一次面板，馬上顯示新版本；電池供電的 Pi 會在這次刷新後關機。
 
 ### 頻道
 

@@ -90,6 +90,15 @@ def test_update_installs_the_newer_release_and_records_it(tmp_path, key, layout)
     (health, cwd), = [(c, w) for c, w in run.commands if "--no-setup" in c]
     assert "--display" not in health and cwd == layout.current_link
     assert not list(layout.base.glob(".download-*"))
+    # Then the panel is redrawn by the new release, after the update ends.
+    assert run.ran("systemctl")[-1] == ["systemctl", "start", "--no-block", "gcal-epd.service"]
+
+
+def test_no_units_means_no_refresh(tmp_path, key, layout):
+    fetch, download = github(tmp_path, key, ("0.3.0", False))
+    run = FakeRun()
+    assert update(layout, run, fetch, download, no_units=True) == "0.3.0"
+    assert not run.ran("systemctl")
 
 
 def test_a_download_cut_short_earlier_is_cleaned_up(tmp_path, key, layout):
@@ -106,6 +115,7 @@ def test_unhealthy_release_is_rolled_back_and_never_retried(tmp_path, key, layou
     with pytest.raises(InstallError, match="health check"):
         update(layout, run, fetch, download)
     assert layout.current() == "0.2.0"
+    assert not run.ran("systemctl")   # a rolled-back release draws nothing
     # The units were reinstalled from 0.2.0 by the rollback.
     assert len(run.ran("install.sh")) == 2
     state = updater.State.load(layout.data)

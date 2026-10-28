@@ -117,6 +117,9 @@ if [ "$UPDATES" = yes ]; then
 fi
 # Runs at the next boot: RTC clock, then power-off after the refresh (PiSugar only).
 sudo systemctl enable epd-power.service
+# Already running (an update, or a reinstall): carry on with this code. It
+# waits out a running update and the refresh that follows it.
+sudo systemctl try-restart epd-power.service
 sudo systemctl enable --now epd-power-schedule.path
 # The timer follows the power schedule's times from now on, not just after a boot.
 (cd "$PROJECT_DIR" && sudo env PYTHONDONTWRITEBYTECODE=1 "$PYTHON" -m gcal_epd.power_manager apply-schedule) \
