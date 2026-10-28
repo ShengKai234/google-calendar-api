@@ -242,3 +242,49 @@ def test_sums_are_in_sha256sum_format(tmp_path):
     (tmp_path / "a").write_bytes(b"ay")
     path = artifacts.write_sums(tmp_path, ["b", "a"])
     assert path.read_text() == f"{_sha(b'ay')}  a\n{_sha(b'bee')}  b\n"
+
+
+# --- debs pinned by URL (PiSugar) ----------------------------------------------
+
+PINNED = "pisugar-server 2.3.5-1 https://example.org/r/pisugar-server_2.3.5-1_armhf.deb {sha}\n"
+
+
+def test_a_deb_pinned_by_url_is_fetched_from_it(tmp_path):
+    data = b"pisugar"
+    path = _lock(tmp_path, _sha(data))
+    path.write_text(path.read_text() + PINNED.format(sha=_sha(data)))
+    lock = artifacts.read_debs_lock(path)
+    assert lock.packages == ["watchdog"]    # the archive's only
+    urls = []
+    names = artifacts.download_debs(lock, tmp_path / "d", fetch=lambda u: urls.append(u) or data)
+    assert urls[-1] == "https://example.org/r/pisugar-server_2.3.5-1_armhf.deb"
+    assert names[-1] == "pisugar-server_2.3.5-1_armhf.deb"
+
+
+def test_a_deb_pinned_by_url_that_is_gone_says_to_repin_by_hand(tmp_path):
+    path = tmp_path / "debs.lock"
+    path.write_text("archive http://a\nsuite trixie\n" + PINNED.format(sha="b" * 64))
+
+    def gone(url):
+        raise OSError("HTTP Error 404")
+    with pytest.raises(InstallError, match="by hand"):
+        artifacts.download_debs(artifacts.read_debs_lock(path), tmp_path / "d", fetch=gone)
+
+
+def test_refresh_keeps_debs_pinned_by_url(tmp_path):
+    path = _lock(tmp_path)
+    pinned = PINNED.format(sha="b" * 64)
+    path.write_text(path.read_text() + pinned)
+    index = gzip.compress(INDEX.format(sha="a" * 64).encode())
+    lock = artifacts.refresh_debs_lock(path, fetch=lambda u: index)
+    assert [d.package for d in lock.debs] == ["watchdog", "pisugar-server"]
+    assert pinned in path.read_text()
+
+
+def test_committed_lock_ships_the_pisugar_daemon():
+    lock = artifacts.read_debs_lock(PROJECT_ROOT / artifacts.DEBS_LOCK)
+    pinned = {d.package for d in lock.debs if d.pinned_url}
+    assert pinned == {"pisugar-server", "pisugar-poweroff"}
+    firstboot = (PROJECT_ROOT / artifacts.FIRSTBOOT).read_text()
+    assert "pisugar-server/address select 127.0.0.1" in firstboot
+    assert "pisugar-server/web boolean false" in firstboot

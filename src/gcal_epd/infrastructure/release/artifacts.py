@@ -166,12 +166,20 @@ def wheels_tar(wheels: Path, out: Path) -> None:
 class Deb:
     package: str
     version: str
-    path: str        # in the archive's pool
+    path: str        # in the archive's pool, or a full https:// URL
     sha256: str
 
     @property
     def filename(self) -> str:
         return self.path.rsplit("/", 1)[-1]
+
+    @property
+    def pinned_url(self) -> bool:
+        """From outside the archive (PiSugar's own releases): re-pinned by hand."""
+        return self.path.startswith("https://")
+
+    def url(self, archive: str) -> str:
+        return self.path if self.pinned_url else f"{archive}/{self.path}"
 
 
 @dataclass(frozen=True)
@@ -182,12 +190,14 @@ class DebsLock:
 
     @property
     def packages(self) -> list[str]:
-        return [d.package for d in self.debs]
+        """The packages taken from the archive (not the pinned URLs)."""
+        return [d.package for d in self.debs if not d.pinned_url]
 
 
 def read_debs_lock(path: Path) -> DebsLock:
     """`archive URL`, `suite NAME`, then one `package version path sha256`
-    per line; # starts a comment."""
+    per line, where path is in the archive's pool or a full https:// URL;
+    # starts a comment."""
     archive = suite = None
     debs = []
     for n, raw in enumerate(path.read_text().splitlines(), 1):
@@ -233,7 +243,8 @@ def refresh_debs_lock(path: Path, fetch: Fetch = fetch) -> DebsLock:
     missing = [p for p in old.packages if p not in found]
     if missing:
         raise InstallError(f"Not in {old.archive} {old.suite}: {', '.join(missing)}")
-    new = DebsLock(old.archive, old.suite, [found[p] for p in old.packages])
+    new = DebsLock(old.archive, old.suite,
+                   [d if d.pinned_url else found[d.package] for d in old.debs])
     header = [l for l in path.read_text().splitlines() if l.startswith("#")]
     body = [f"archive {new.archive}", f"suite {new.suite}"]
     body += [f"{d.package} {d.version} {d.path} {d.sha256}" for d in new.debs]
@@ -246,10 +257,12 @@ def download_debs(lock: DebsLock, dest: Path, fetch: Fetch = fetch) -> list[str]
     dest.mkdir(parents=True, exist_ok=True)
     names = []
     for deb in lock.debs:
-        url = f"{lock.archive}/{deb.path}"
         try:
-            data = fetch(url)
+            data = fetch(deb.url(lock.archive))
         except OSError as e:
+            if deb.pinned_url:
+                raise InstallError(f"Could not download {deb.path} ({e}); "
+                                   f"pin another URL in {DEBS_LOCK} by hand.") from None
             raise InstallError(
                 f"{deb.package} {deb.version} is no longer in the archive ({e}). "
                 f"Re-pin with: python -m gcal_epd.build_release --refresh-debs") from None
