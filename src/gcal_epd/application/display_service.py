@@ -4,6 +4,7 @@ from pathlib import Path
 from gcal_epd.config import font_path, output_path as _output_path
 from gcal_epd.domain.repositories import EventRepository, WeatherRepository
 from gcal_epd.render.draw import render
+from gcal_epd.version import version
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +41,8 @@ def run(
 
     weather = weather_repo.fetch_weather() if weather_repo else None
 
-    img = render(all_events, weather=weather, output_path=output_path, font_path=font)
+    img = render(all_events, weather=weather, output_path=output_path, font_path=font,
+                 version=version(project_root))
     log.info("Preview saved to %s", output_path)
 
     if push_display:
