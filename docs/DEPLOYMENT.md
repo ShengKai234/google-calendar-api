@@ -19,6 +19,7 @@ by an AI agent working in this repository.
 | Card preparation | `deploy/sdcard/prepare.sh` | Mac (or Linux PC) with the card plugged in |
 | First boot | `deploy/sdcard/firstboot.sh`, run once by cloud-init | the Pi |
 | Release installer | `python3 -m gcal_epd.releases` (`src/gcal_epd/releases.py`, `infrastructure/release/`) | the Pi, as root |
+| Over-the-air update | `releases update` (`infrastructure/release/updater.py`), run daily by `epd-update.timer` | the Pi, as root |
 | Units | `deploy/install.sh` (called by the installer with `--yes`) | the Pi |
 
 A release is published as four files:
@@ -154,9 +155,11 @@ from step 1 (cloud-init runs `user-data` once per card).
    ```
 
    It downloads every file, checks each against `SHA256SUMS`, signs
-   `SHA256SUMS` and uploads `SHA256SUMS.sig`.
+   `SHA256SUMS` and uploads `SHA256SUMS.sig`. From then on, displays on
+   the beta channel install it at their next daily check.
 
-4. Once it has run well on the beta display, promote it to stable:
+4. Once it has run well on the beta display, promote it to stable; stable
+   displays then install it at their next check:
 
    ```bash
    gh release edit v0.2.0 --prerelease=false --latest
@@ -258,7 +261,57 @@ git diff deploy/sdcard/debs.lock
 
 ## Update a running display
 
-Until the on-device updater exists, install a release by hand, on the Pi.
+### Automatic updates
+
+A display installed as a release updates itself. `epd-update.timer` runs
+`python3 -m gcal_epd.releases update` once a day (03:00–04:00 Taiwan time;
+soon after the next boot if the Pi was off), which:
+
+1. lists the repository's releases on GitHub;
+2. picks the newest one for the display's channel that is newer than the
+   running release (never an older one) and has not failed here before;
+3. checks `SHA256SUMS.sig` against the `allowed_signers` of the **running**
+   release, then every file against `SHA256SUMS`; an unsigned release
+   waits until it is signed;
+4. builds and switches to it, like any install (the old release keeps
+   running until the new one imports);
+5. renders the calendar once with it, as the app's user, without touching
+   the panel. If that crashes or hangs, it rolls back to the previous
+   release and never tries this one again. A release whose build fails
+   three times is given up too.
+
+The panel shows the new release at its next scheduled refresh.
+
+### Channel
+
+| Channel | Takes | For |
+|---|---|---|
+| `stable` (default) | full releases | friends' displays |
+| `beta` | pre-releases too | the maintainer's own display |
+
+Set it per display in `/opt/e-pages/data/config.local.toml`:
+
+```toml
+[update]
+channel = "beta"      # or "stable"
+enabled = true        # false: no automatic updates
+```
+
+### Check and update by hand
+
+```bash
+P="sudo env PYTHONPATH=/opt/e-pages/current/src python3 -m gcal_epd.releases"
+$P status               # running release, channel, last check and its result
+$P update --check       # is there a newer release?
+$P update               # update now (also with updates off)
+$P update --channel beta
+journalctl -u epd-update -n 50
+```
+
+`status` also lists rejected releases. To retry one, remove it from
+`rejected` in `/opt/e-pages/data/update-state.json`.
+
+### Install, switch and roll back by hand
 
 From a checkout (installs its committed `HEAD`):
 
@@ -280,7 +333,6 @@ The display keeps running the old release while the new one builds (about
 5 minutes on a Pi Zero). Then:
 
 ```bash
-P="sudo env PYTHONPATH=/opt/e-pages/current/src python3 -m gcal_epd.releases"
 $P list                 # installed releases, current and previous marked
 $P rollback             # back to the previous release
 $P switch 0.2.0         # any installed release
@@ -289,9 +341,12 @@ $P prune                # remove old and unfinished releases
 
 `switch` and `rollback` also reinstall the systemd units from the release
 they switch to, so the units always match the code. A switch takes effect
-at the next refresh or boot. A display that still
-runs from a git checkout moves to this layout once, with
-`bash deploy/install-release.sh --migrate-from ~/google-calendar-api`.
+at the next refresh or boot.
+
+A display that still runs from a git checkout moves to this layout once,
+with `bash deploy/install-release.sh --migrate-from ~/google-calendar-api`.
+A display installed before automatic updates existed gets them by
+installing, once by hand, a release that has them.
 
 ---
 

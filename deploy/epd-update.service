@@ -1,0 +1,21 @@
+# Template — deploy/install.sh fills in @PROJECT_DIR@ (installed releases only).
+# Install with that script; a copy made by hand will not start.
+[Unit]
+Description=e-Paper calendar over-the-air update (newest signed release)
+After=network-online.target time-sync.target
+Wants=network-online.target
+# Not with the panel's own setup or refresh; the build is slow and long.
+After=epd-wifi-setup.service epd-feed-setup.service gcal-epd.service
+
+[Service]
+Type=oneshot
+# Root: it writes /opt/e-pages and the units. The system python3, not the
+# release's venv: a broken venv must not stop the update that fixes it.
+WorkingDirectory=/
+Environment=PYTHONPATH=@PROJECT_DIR@/src PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 -m gcal_epd.releases update
+# A Pi Zero builds a release in about 5 minutes; the health check adds a render.
+TimeoutStartSec=30min
+Nice=10
+StandardOutput=journal
+StandardError=journal

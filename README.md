@@ -255,8 +255,10 @@ bash deploy/install.sh
 
 ### Install as a release
 
-The over-the-air updates being built install the app as *releases*, side by
-side, with an atomic switch and a way back:
+Over-the-air updates install the app as *releases*, side by side, with an
+atomic switch and a way back; a display installed this way checks for a
+newer signed release once a day (see
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#update-a-running-display)):
 
 ```
 /opt/e-pages/releases/<version>/   code and its own .venv (root-owned)

@@ -16,6 +16,7 @@
 | SD 卡準備 | `deploy/sdcard/prepare.sh` | 插著 SD 卡的 Mac（或 Linux 電腦） |
 | 首次開機 | `deploy/sdcard/firstboot.sh`，由 cloud-init 執行一次 | Pi |
 | Release 安裝程式 | `python3 -m gcal_epd.releases`（`src/gcal_epd/releases.py`、`infrastructure/release/`） | Pi，以 root 執行 |
+| OTA 自動更新 | `releases update`（`infrastructure/release/updater.py`），由 `epd-update.timer` 每天執行 | Pi，以 root 執行 |
 | Units | `deploy/install.sh`（由安裝程式以 `--yes` 呼叫） | Pi |
 
 一個 release 發布成四個檔案：
@@ -125,9 +126,9 @@ journalctl -b -u epd-wifi-setup -u gcal-epd --no-pager | tail -50
    bash deploy/release/sign.sh v0.2.0
    ```
 
-   它會下載所有檔案、逐一對照 `SHA256SUMS`、簽署 `SHA256SUMS`，並上傳 `SHA256SUMS.sig`。
+   它會下載所有檔案、逐一對照 `SHA256SUMS`、簽署 `SHA256SUMS`，並上傳 `SHA256SUMS.sig`。簽好之後，beta 頻道的裝置會在下次每日檢查時安裝它。
 
-4. 在 beta 裝置上運作正常後，升級為 stable：
+4. 在 beta 裝置上運作正常後，升級為 stable；stable 頻道的裝置會在下次檢查時安裝：
 
    ```bash
    gh release edit v0.2.0 --prerelease=false --latest
@@ -208,7 +209,47 @@ git diff deploy/sdcard/debs.lock
 
 ## 更新運作中的裝置
 
-在裝置端更新程式完成前，先在 Pi 上手動安裝 release。
+### 自動更新
+
+安裝成 release 的裝置會自己更新。`epd-update.timer` 每天執行一次 `python3 -m gcal_epd.releases update`（台灣時間 03:00–04:00；如果當時 Pi 關機，下次開機後不久就會執行），步驟如下：
+
+1. 列出 repo 在 GitHub 上的所有 release；
+2. 挑出符合裝置頻道、比目前版本新（絕不降版）、而且之前沒在這台失敗過的最新版本；
+3. 用**目前執行中**那個版本的 `allowed_signers` 驗證 `SHA256SUMS.sig`，再逐一比對 `SHA256SUMS`；還沒簽章的版本會等到簽好才裝；
+4. 建置並切換過去，跟一般安裝一樣（新版本能 import 之前，舊版本照常運作）；
+5. 用新版本以 app 使用者身分畫一次日曆，但不推到面板。如果當掉或卡住，就 rollback 回上一個版本，之後也不會再試這個版本。建置連續失敗三次的版本同樣會放棄。
+
+面板會在下一次排程刷新時顯示新版本。
+
+### 頻道
+
+| 頻道 | 接受 | 適合 |
+|---|---|---|
+| `stable`（預設） | 正式版 | 朋友的裝置 |
+| `beta` | 也接受 pre-release | 維護者自己的裝置 |
+
+每台裝置在 `/opt/e-pages/data/config.local.toml` 個別設定：
+
+```toml
+[update]
+channel = "beta"      # 或 "stable"
+enabled = true        # false：關閉自動更新
+```
+
+### 手動檢查與更新
+
+```bash
+P="sudo env PYTHONPATH=/opt/e-pages/current/src python3 -m gcal_epd.releases"
+$P status               # 目前版本、頻道、上次檢查時間與結果
+$P update --check       # 有沒有新版本？
+$P update               # 立刻更新（關閉自動更新時也可以）
+$P update --channel beta
+journalctl -u epd-update -n 50
+```
+
+`status` 也會列出被拒絕的版本。要重試某個版本，把它從 `/opt/e-pages/data/update-state.json` 的 `rejected` 中刪除。
+
+### 手動安裝、切換與 rollback
 
 從 checkout 安裝（安裝它已 commit 的 `HEAD`）：
 
@@ -229,14 +270,15 @@ sudo env PYTHONPATH=/tmp/rel/src python3 -m gcal_epd.releases install \
 新版本建置期間（Pi Zero 約 5 分鐘），裝置繼續跑舊版本。之後：
 
 ```bash
-P="sudo env PYTHONPATH=/opt/e-pages/current/src python3 -m gcal_epd.releases"
 $P list                 # 已安裝的版本，標出 current 和 previous
 $P rollback             # 回到上一個版本
 $P switch 0.2.0         # 切到任一已安裝的版本
 $P prune                # 刪除舊的和未完成的版本
 ```
 
-`switch` 和 `rollback` 也會用切換過去那個版本的檔案重新安裝 systemd units，讓 units 和程式碼永遠一致。切換在下次刷新或開機時生效。還在用 git checkout 執行的裝置，用 `bash deploy/install-release.sh --migrate-from ~/google-calendar-api` 搬到這個結構一次即可。
+`switch` 和 `rollback` 也會用切換過去那個版本的檔案重新安裝 systemd units，讓 units 和程式碼永遠一致。切換在下次刷新或開機時生效。
+
+還在用 git checkout 執行的裝置，用 `bash deploy/install-release.sh --migrate-from ~/google-calendar-api` 搬到這個結構一次即可。在自動更新功能出現前就安裝的裝置，要先手動安裝一次含有這個功能的版本，之後才會自動更新。
 
 ---
 

@@ -33,8 +33,10 @@ def data_dir(root: Path = PROJECT_ROOT, env=os.environ) -> Path:
     """
     if env.get("EPD_DATA_DIR"):
         return Path(env["EPD_DATA_DIR"])
-    if root.parent.name == "releases" and (root / RELEASE_MARKER).is_file():
-        return root.parent.parent / "data"
+    # Also through the `current` link (PYTHONPATH=/opt/e-pages/current/src).
+    for r in (root, root.resolve()):
+        if r.parent.name == "releases" and (r / RELEASE_MARKER).is_file():
+            return r.parent.parent / "data"
     return root
 
 

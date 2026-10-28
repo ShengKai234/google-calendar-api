@@ -61,6 +61,16 @@ def test_installed_release_keeps_data_next_to_the_releases(tmp_path):
     assert config.data_dir(release, env={}) == tmp_path / "data"
 
 
+def test_release_reached_through_the_current_link_finds_its_data(tmp_path):
+    """The update timer runs with PYTHONPATH=/opt/e-pages/current/src."""
+    release = tmp_path / "releases" / "0.2.0"
+    release.mkdir(parents=True)
+    (release / "RELEASE").write_text("0.2.0\n")
+    (tmp_path / "current").symlink_to("releases/0.2.0")
+    assert config.data_dir(tmp_path / "current", env={}).resolve() == \
+        (tmp_path / "data").resolve()
+
+
 def test_releases_dir_without_marker_is_still_a_checkout(tmp_path):
     """A checkout that happens to sit in a folder named "releases"."""
     checkout = tmp_path / "releases" / "google-calendar-api"

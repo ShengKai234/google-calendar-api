@@ -203,7 +203,7 @@ bash deploy/install.sh
 
 ### 安裝成 release
 
-開發中的 OTA 更新會把程式安裝成並排的「release」，可以原子切換，也能退回上一版：
+OTA 更新會把程式安裝成並排的「release」，可以原子切換，也能退回上一版；用這種方式安裝的裝置，每天會檢查一次有沒有已簽章的新版本（見 [docs/DEPLOYMENT.zh-TW.md](docs/DEPLOYMENT.zh-TW.md#更新運作中的裝置)）：
 
 ```
 /opt/e-pages/releases/<版本>/      程式和它自己的 .venv（屬於 root）

@@ -1,6 +1,5 @@
 """Releases side by side; `current` always names one whole release."""
 import os
-import time
 
 import pytest
 
@@ -123,12 +122,18 @@ def test_odd_names_are_refused(layout, label):
         layout.path(label)
 
 
-def test_labels_oldest_first(layout):
-    for label in ("0.10.0", "0.9.0"):
-        path = _install(layout, label)
-        stamp = time.time() + (0 if label == "0.10.0" else 10)
-        os.utime(path, (stamp, stamp))
-    assert layout.labels() == ["0.10.0", "0.9.0"]
+def test_labels_oldest_first_by_version_not_by_time(layout):
+    # 0.10.0 finished "later" on a clock that was wrong (a new card's clock
+    # is the image's build date): the version still decides.
+    for label, stamp in (("0.10.0", 1000), ("0.9.0", 2000), ("0.9.0+gabc1234", 3000)):
+        os.utime(_install(layout, label), (stamp, stamp))
+    assert layout.labels() == ["0.9.0", "0.9.0+gabc1234", "0.10.0"]
+
+
+def test_labels_that_are_not_versions_come_first_by_time(layout):
+    for label, stamp in (("0.1.0", 1000), ("test-b", 3000), ("test-a", 2000)):
+        os.utime(_install(layout, label), (stamp, stamp))
+    assert layout.labels() == ["test-a", "test-b", "0.1.0"]
 
 
 def test_prune_keeps_current_previous_and_the_newest(layout):

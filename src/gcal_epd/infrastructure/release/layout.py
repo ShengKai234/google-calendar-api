@@ -24,6 +24,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from gcal_epd.config import RELEASE_MARKER
+from gcal_epd.infrastructure.release.versions import version_key
 
 DEFAULT_BASE = Path("/opt/e-pages")
 INCOMPLETE = "INCOMPLETE"
@@ -58,13 +59,22 @@ class ReleaseLayout:
         return (p / RELEASE_MARKER).is_file() and not (p / INCOMPLETE).exists()
 
     def labels(self) -> list[str]:
-        """Complete releases, oldest first (by when they were finished)."""
+        """Complete releases, oldest first.
+
+        By version where the name is one (X.Y.Z[+local]); others, sorted
+        first, by when they were finished. Not by time alone: a new card's
+        clock is the image's build date until it reaches the network.
+        """
         if not self.releases.is_dir():
             return []
         done = [p.name for p in self.releases.iterdir()
                 if p.is_dir() and _valid_label(p.name) and self.is_complete(p.name)]
-        # Removing INCOMPLETE is the last change to a release's directory.
-        return sorted(done, key=lambda n: self.path(n).stat().st_mtime)
+
+        def order(name: str):
+            key = version_key(name)
+            # Removing INCOMPLETE is the last change to a release's directory.
+            return (1, key, 0.0) if key else (0, (), self.path(name).stat().st_mtime)
+        return sorted(done, key=order)
 
     def _target(self, link: Path) -> str | None:
         try:

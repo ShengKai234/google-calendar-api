@@ -81,6 +81,16 @@ install_unit epd-wifi-setup.service
 # Not enabled on its own: epd-wifi-setup starts it at boot when no feeds exist.
 install_unit epd-feed-setup.service
 echo "      Installed $SERVICE_NAME.service/.timer, epd-wifi-setup and epd-feed-setup"
+# Over-the-air updates replace an installed release (RELEASE marks one);
+# a git checkout is updated with git, so it gets no update timer.
+if [ -f "$PROJECT_DIR/RELEASE" ]; then
+    install_unit epd-update.service
+    install_unit epd-update.timer
+    echo "      Installed epd-update.service/.timer (over-the-air updates)"
+    UPDATES=yes
+else
+    UPDATES=no
+fi
 
 # --- Reload systemd ---
 echo "[2/4] Reloading systemd daemon..."
@@ -92,6 +102,10 @@ sudo systemctl enable "$SERVICE_NAME.timer"
 sudo systemctl start  "$SERVICE_NAME.timer"
 # Runs at the next boot: a hotspot for Wi-Fi setup if no network is joined.
 sudo systemctl enable epd-wifi-setup.service
+if [ "$UPDATES" = yes ]; then
+    sudo systemctl enable epd-update.timer
+    sudo systemctl start  epd-update.timer
+fi
 
 # --- Enable hardware watchdog ---
 echo "[4/4] Enabling hardware watchdog..."
