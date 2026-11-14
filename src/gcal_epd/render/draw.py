@@ -31,6 +31,7 @@ from gcal_epd.render.layout import (
     build_layout,
     format_weekday,
 )
+from gcal_epd.render.text import draw_runs, needs_fallback, split_runs, text_width
 
 _QR_SIZE = 170  # pixels for the QR code block on the setup screen
 _QR_QUIET = 10  # white quiet-zone margin around the QR so it stays scannable
@@ -80,10 +81,19 @@ def _load_font(font_path: str, size: int) -> ImageFont.FreeTypeFont | ImageFont.
 
 
 def _text(draw, xy, text, font, fill, anchor="la", bold=0) -> None:
-    """Draw text, faking bold with a stroke since only a Regular weight ships."""
+    """Draw text, faking bold with a stroke since only a Regular weight ships.
+
+    Characters `font` lacks (emoji) are drawn with the emoji font; see text.py.
+    """
     kwargs = dict(font=font, fill=fill)
     if bold:
         kwargs.update(stroke_width=bold, stroke_fill=fill)
+    runs = split_runs(text, font)
+    if needs_fallback(runs, font):
+        del kwargs["font"]
+        draw_runs(draw, xy, runs, font, anchor=anchor, **kwargs)
+        return
+    text = runs[0][0] if runs else ""
     try:
         draw.text(xy, text, anchor=anchor, **kwargs)
     except (ValueError, AttributeError):
@@ -97,15 +107,21 @@ def _text(draw, xy, text, font, fill, anchor="la", bold=0) -> None:
 
 
 def _textw(draw: ImageDraw.ImageDraw, text: str, font, bold: int = 0) -> float:
-    return draw.textlength(text, font=font) + 2 * bold
+    return text_width(draw, text, font) + 2 * bold
 
 
 def _truncate(draw: ImageDraw.ImageDraw, text: str, font, max_width: float) -> str:
-    if draw.textlength(text, font=font) <= max_width:
+    if text_width(draw, text, font) <= max_width:
         return text
-    while text and draw.textlength(text + "…", font=font) > max_width:
-        text = text[:-1]
-    return text + "…"
+    # Longest prefix that fits with the ellipsis; width only grows with length.
+    lo, hi = 0, len(text)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if text_width(draw, text[:mid] + "…", font) <= max_width:
+            lo = mid
+        else:
+            hi = mid - 1
+    return text[:lo] + "…"
 
 
 # --- Weather pictograms -------------------------------------------------
@@ -317,7 +333,7 @@ def render(
         title = _truncate(draw, row.title, fonts["title"], title_max_w)
         _text(draw, (COL_TITLE_X, mid), title, fonts["title"], FG, anchor="lm")
 
-        underline_w = draw.textlength(title, font=fonts["title"])
+        underline_w = _textw(draw, title, fonts["title"])
         underline_y = mid + UNDERLINE_DROP
         draw.line(
             [(COL_TITLE_X, underline_y), (COL_TITLE_X + underline_w, underline_y)],
