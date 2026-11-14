@@ -27,7 +27,14 @@ def use_writable_lgpio_dir(data: Path = DATA_DIR, env=os.environ) -> None:
     env.setdefault("LG_WD", str(data))
 
 
-def push_to_display(img: Image.Image) -> None:
+def push_to_display(img: Image.Image, offset: tuple[int, int] = (0, 0)) -> None:
+    """Show a screen on the panel, placed in the photo-frame window.
+
+    `offset` nudges the window (see render.frame.frame_offset).
+    """
+    from gcal_epd.render.frame import to_panel
+    panel = to_panel(img, offset)
+
     use_writable_lgpio_dir()
     try:
         from waveshare_epd import epd7in3f
@@ -44,7 +51,7 @@ def push_to_display(img: Image.Image) -> None:
     epd.init()
 
     log.info("Sending image — a full refresh takes about 15–30 seconds...")
-    epd.display(epd.getbuffer(img))
+    epd.display(epd.getbuffer(panel))
 
     log.info("Done. Display going to sleep.")
     epd.sleep()

@@ -189,5 +189,6 @@ def test_build_layout_underline_stays_clear_of_footer():
     assert lowest + ROW_H / 2 + UNDERLINE_DROP <= CONTENT_BOTTOM
 
 
-def test_screen_dimensions_match_panel():
-    assert (WIDTH, HEIGHT) == (800, 480)
+def test_screen_is_the_photo_frame_window():
+    """Screens are drawn at the 139 x 87 mm window (render.frame puts them on the panel)."""
+    assert (WIDTH, HEIGHT) == (695, 435)

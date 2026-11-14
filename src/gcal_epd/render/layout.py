@@ -11,22 +11,33 @@ from gcal_epd.domain.event import CalendarEvent
 
 TW_TZ = datetime.timezone(datetime.timedelta(hours=8))
 
-# --- Display geometry ---
-WIDTH = 800
-HEIGHT = 480
-PADDING = 14
+# --- Panel and photo-frame window ---
+# The Waveshare 7.3" (F) draws 800x480 px over a 160 x 96 mm active area,
+# 0.2 mm per pixel. It sits behind a photo-frame mat whose opening is
+# 139 x 87 mm, so only the centred 695 x 435 px are visible. Every screen is
+# drawn at the window's size (WIDTH x HEIGHT); render.frame pastes it onto the
+# full panel (BG under the mat) just before it goes to the driver.
+PANEL_W = 800
+PANEL_H = 480
+PX_PER_MM = 5
+FRAME_MM = (139, 87)
+WIDTH = FRAME_MM[0] * PX_PER_MM    # 695
+HEIGHT = FRAME_MM[1] * PX_PER_MM   # 435
 
-HEADER_H = 86        # height of the bordered header card
+# --- Display geometry (inside the window) ---
+PADDING = 12         # 2.4 mm: keeps borders and QR panels off the mat's edge
+
+HEADER_H = 76        # height of the bordered header card
 HEADER_GAP = 8       # gap between header card and the first event row
-ROW_H = 34           # one event row
-DAY_GAP = 14         # extra space inserted between two different days
+ROW_H = 32           # one event row
+DAY_GAP = 9          # extra space inserted between two different days
 FOOTER_H = 28        # reserved strip for the "last updated" line
 UNDERLINE_DROP = 14  # title underline offset below the row's vertical centre
 
 # Column origins for the three-column event table
-COL_DATE_X = PADDING + 8
-COL_TIME_X = 178
-COL_TITLE_X = 272
+COL_DATE_X = PADDING + 6
+COL_TIME_X = 160
+COL_TITLE_X = 246
 
 # First row sits below the header card; last row must clear the footer
 CONTENT_TOP = PADDING + HEADER_H + HEADER_GAP

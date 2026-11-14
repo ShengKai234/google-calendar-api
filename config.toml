@@ -15,6 +15,10 @@ location = "Taipei"
 [display]
 output_path = "preview.png"
 font_path = "assets/fonts/NotoSansCJKtc-Regular.otf"
+# Screens fit a 139 x 87 mm photo-frame opening (695 x 435 px, centred).
+# If the mat sits off-centre, move the window [right, down] in pixels,
+# best in this display's config.local.toml: x -52..53, y -22..23.
+# frame_offset_px = [0, 0]
 
 [update]
 # Over-the-air updates of an installed release (docs/DEPLOYMENT.md).

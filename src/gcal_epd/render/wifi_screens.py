@@ -7,7 +7,7 @@ password is printed too, for phones that cannot scan a Wi-Fi QR.
 """
 from PIL import Image, ImageDraw
 
-from gcal_epd.render.draw import _QR_QUIET, _load_font, _text, _truncate
+from gcal_epd.render.draw import _QR_QUIET, _load_font, _text, _textw, _truncate
 from gcal_epd.render.layout import BG, FG, HEADER_H, HEIGHT, PADDING, PALETTE, WIDTH
 
 _QR = 160  # smaller than the calendar setup QR so two fit beside the text
@@ -54,7 +54,6 @@ def render_wifi_setup(
     fonts = {
         "xl": _load_font(font_path, 32),
         "lg": _load_font(font_path, 20),
-        "pw": _load_font(font_path, 30),
         "md": _load_font(font_path, 15),
         "sm": _load_font(font_path, 13),
     }
@@ -86,7 +85,12 @@ def render_wifi_setup(
     y += 36
     _text(draw, (text_x, y), "Password", fonts["md"], FG)
     y += 22
-    _text(draw, (text_x, y), ap_password, fonts["pw"], PALETTE["green"], bold=1)
+    # Never truncate the password: step the size down until it fits the column.
+    for size in range(30, 17, -2):
+        pw_font = _load_font(font_path, size)
+        if _textw(draw, ap_password, pw_font, bold=1) <= max_w:
+            break
+    _text(draw, (text_x, y), ap_password, pw_font, PALETTE["green"], bold=1)
     y += 50
     _text(draw, (text_x, y), "Then open", fonts["md"], FG)
     y += 22

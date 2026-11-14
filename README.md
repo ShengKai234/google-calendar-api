@@ -25,6 +25,12 @@ keyboard or SSH needed after the first install.
 The Pi Zero W has a single 2.4GHz Wi-Fi radio: it cannot join 5GHz-only
 networks.
 
+The panel sits in a photo frame whose mat opening is 139 × 87 mm, smaller
+than the panel's 160 × 96 mm active area. Every screen is laid out for that
+window: 695 × 435 of the 800 × 480 pixels (0.2 mm each), centred, with black
+under the mat. If your mat sits off-centre, nudge the window with
+`frame_offset_px` (see [Configuration](#configuration)).
+
 ---
 
 ## How it works
@@ -189,6 +195,7 @@ location = "Taipei"
 [display]
 output_path = "preview.png"           # last rendered image
 font_path = "assets/fonts/NotoSansCJKtc-Regular.otf"
+# frame_offset_px = [0, 0]            # move the frame window [right, down] in pixels
 ```
 
 Relative paths are taken from the checkout. If you change `feeds_file`,
@@ -199,6 +206,17 @@ setting in `config.local.toml` next to the feeds file; it is laid over
 `config.toml` and is not tracked. Tables merge key by key; a list such as
 `[[sources]]` replaces the shipped one whole. An update can then change the
 defaults without overwriting your changes.
+
+`frame_offset_px` is one such setting. If the frame's mat hides a sliver of
+one side, this `config.local.toml` moves the content 4 px (0.8 mm) right and
+2 px up:
+
+```toml
+[display]
+frame_offset_px = [4, -2]
+```
+
+x can be −52..53 and y −22..23; anything else is ignored with a warning.
 
 The feeds file, `config.local.toml` and the preview are this display's
 *data*. In a git checkout they sit in the checkout. In an installed release
