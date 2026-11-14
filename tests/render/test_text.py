@@ -240,7 +240,7 @@ def _truncate_linear(draw, text, font, max_width):
     "", "短", "媽媽生日 🎂 🎉 ✈", "Plain ASCII title that is long enough to be cut " * 3,
     "很長的標題 " + COMMON_EMOJI * 10, "ℹ️" * 40, "a" * 15, "a" * 16, "a" * 17,
 ])
-@pytest.mark.parametrize("limit", [0, 10, 60, 300, 480])
+@pytest.mark.parametrize("limit", [-5, 0, 10, 60, 300, 480])
 def test_truncate_matches_the_linear_reference(draw, cjk, text, limit):
     assert _truncate(draw, text, cjk, limit) == _truncate_linear(draw, text, cjk, limit)
 
