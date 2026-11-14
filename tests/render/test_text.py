@@ -1,5 +1,6 @@
 """Tests for render.text — emoji fall back to Noto Emoji instead of tofu (issue #38)."""
 import datetime
+import struct
 from pathlib import Path
 
 import pytest
@@ -78,18 +79,73 @@ def test_every_common_emoji_falls_back(cjk):
     assert runs == [(COMMON_EMOJI, T.emoji_font(cjk.size))]
 
 
+def test_info_sign_falls_back(cjk):
+    """ℹ is a letter (Ll), not a symbol, yet still an emoji the CJK font lacks."""
+    assert not T.has_glyph(cjk, "ℹ")
+    assert T.split_runs("ℹ️ 說明", cjk) == [("ℹ\ufe0f", T.emoji_font(cjk.size)), (" 說明", cjk)]
+
+
+def test_everything_noto_emoji_has_and_the_primary_lacks_falls_back(cjk):
+    emoji = T.emoji_font(cjk.size)
+    checked = 0
+    for code in range(0x20, 0x20000):
+        ch = chr(code)
+        if T.has_glyph(cjk, ch) or not T.has_glyph(emoji, ch):
+            continue
+        if code in T._SKIN_TONES or code == T._KEYCAP:
+            continue  # standalone they fall back too, checked below
+        assert T.split_runs(ch, cjk) == [(ch, emoji)], hex(code)
+        checked += 1
+    assert checked > 1000
+
+
+def test_marks_outside_an_emoji_sequence_are_kept(cjk):
+    emoji = T.emoji_font(cjk.size)
+    assert T.split_runs("🏽", cjk) == [("🏽", emoji)]
+    assert T.split_runs("A\u20e3", cjk) == [("A", cjk), ("\u20e3", emoji)]
+
+
 @pytest.mark.parametrize("text, kept", [
-    ("❤️", "❤"),              # VS16
-    ("👍🏽", "👍"),             # skin tone
-    ("👨‍👩‍👧", "👨👩👧"),          # ZWJ sequence, unshaped without raqm
+    ("👍🏽", "👍"),                      # skin tone after an emoji
+    ("👨🏽\u200d💻", "👨\u200d💻"),       # ... inside a ZWJ sequence
+    ("1️⃣", "1\ufe0f"),                  # keycap after its base
+    ("#\u20e3", "#"),
 ])
-def test_shaping_only_marks_are_dropped(cjk, text, kept):
+def test_visible_marks_of_unshaped_sequences_are_dropped(cjk, text, kept):
     assert "".join(s for s, _ in T.split_runs(text, cjk)) == kept
+
+
+@pytest.mark.parametrize("text", [
+    "❤️", "👨\u200d👩\u200d👧", "🏴\U000E0067\U000E0062\U000E0065\U000E006E\U000E0067\U000E007F",
+    "A\u200dB", "☀️ 晴",
+])
+def test_invisible_marks_are_kept(cjk, text):
+    """ZWJ, VS16 and tags draw as nothing in Noto Emoji: kept, never tofu."""
+    runs = T.split_runs(text, cjk)
+    assert "".join(s for s, _ in runs) == text
+    for s, f in runs:
+        for ch in s:
+            assert T.has_glyph(f, ch), (hex(ord(ch)), f)
+
+
+def test_primary_text_with_marks_stays_unchanged():
+    """A primary font that has the marks keeps them all, in one run."""
+    font = T.emoji_font(23)  # Noto Emoji maps ZWJ, VS16, skin tones, keycap
+    for text in ("👍🏽 ok", "1️⃣", "👨\u200d👩\u200d👧", "A\u200dB"):
+        assert T.split_runs(text, font) == [(text, font)]
 
 
 def test_characters_the_primary_font_has_stay_with_it(cjk):
     # Noto Emoji also has digits (for keycaps); the CJK font's must win.
-    assert T.split_runs("1️⃣", cjk) == [("1", cjk)]
+    assert T.split_runs("1", cjk) == [("1", cjk)]
+
+
+def test_emoji_font_is_loaded_only_when_needed(cjk, monkeypatch):
+    def boom(size):
+        raise AssertionError("emoji font loaded for text that needs none")
+
+    monkeypatch.setattr(T, "emoji_font", boom)
+    assert T.split_runs("媽媽生日 ★ Meeting " * 50, cjk) == [("媽媽生日 ★ Meeting " * 50, cjk)]
 
 
 def test_missing_emoji_font_falls_back_to_the_primary_font(cjk, monkeypatch):
@@ -102,6 +158,52 @@ def test_bitmap_fonts_never_fall_back():
     if isinstance(font, ImageFont.FreeTypeFont):
         pytest.skip("this Pillow's default font is scalable")
     assert T.split_runs("x 🎂", font) == [("x 🎂", font)]
+
+
+# --- cmap parsing ---
+
+def _format4(segments) -> bytes:
+    """A cmap format 4 subtable; segments are (start, end, delta, glyphs or None)."""
+    seg = len(segments)
+    ends = [e for _, e, _, _ in segments]
+    starts = [s for s, _, _, _ in segments]
+    deltas = [d for _, _, d, _ in segments]
+    arrays, offsets = [], []
+    for i, (_, _, _, glyphs) in enumerate(segments):
+        if glyphs is None:
+            offsets.append(0)
+        else:  # bytes from idRangeOffset[i] to its slice of glyphIdArray
+            offsets.append(2 * (seg - i) + 2 * len(arrays))
+            arrays += glyphs
+    body = struct.pack(f">{seg}H", *ends) + b"\0\0" + struct.pack(f">{seg}H", *starts)
+    body += struct.pack(f">{seg}h", *deltas) + struct.pack(f">{seg}H", *offsets)
+    body += struct.pack(f">{len(arrays)}H", *arrays)
+    return struct.pack(">7H", 4, 14 + len(body), 0, 2 * seg, 0, 0, 0) + body
+
+
+def test_cmap_format4_lookup():
+    lookup = T._format4(_format4([
+        (0x41, 0x43, 1 - 0x41, None),          # A-C -> glyphs 1-3 by delta
+        (0x2139, 0x213B, 0, [7, 0, 9]),        # via glyphIdArray; U+213A unmapped
+        (0xFFFF, 0xFFFF, 1, None),             # terminator maps to .notdef
+    ]))
+    assert [lookup(c) for c in (0x40, 0x41, 0x43, 0x44)] == [False, True, True, False]
+    assert [lookup(c) for c in (0x2139, 0x213A, 0x213B)] == [True, False, True]
+    assert not lookup(0xFFFF)
+    assert not lookup(0x1F382)  # beyond the BMP
+
+
+def test_cmap_agrees_with_what_pillow_draws(cjk):
+    """Mapped glyphs differ from .notdef; unmapped ones render exactly as it."""
+    notdef = bytes(cjk.getmask("\U0010FFFD"))
+    for ch in "媽A★♥☀□→—" + COMMON_EMOJI + "ℹ\u2122\u2194":
+        assert T.has_glyph(cjk, ch) == (bytes(cjk.getmask(ch)) != notdef), hex(ord(ch))
+
+
+def test_unreadable_font_never_falls_back(tmp_path):
+    bogus = tmp_path / "x.ttf"
+    bogus.write_bytes(b"not a font")
+    assert T._coverage_of(("bogus", 0), str(bogus), 0) is None
 
 
 # --- width, truncation, drawing ---
@@ -123,6 +225,24 @@ def test_truncate_measures_mixed_text(draw, cjk):
     assert _textw(draw, out, cjk) <= limit
     # One more character would not have fit.
     assert _textw(draw, title[:len(out)] + "…", cjk) > limit
+
+
+def _truncate_linear(draw, text, font, max_width):
+    """The original one-character-at-a-time algorithm, as a reference."""
+    if _textw(draw, text, font) <= max_width:
+        return text
+    while text and _textw(draw, text + "…", font) > max_width:
+        text = text[:-1]
+    return text + "…"
+
+
+@pytest.mark.parametrize("text", [
+    "", "短", "媽媽生日 🎂 🎉 ✈", "Plain ASCII title that is long enough to be cut " * 3,
+    "很長的標題 " + COMMON_EMOJI * 10, "ℹ️" * 40, "a" * 15, "a" * 16, "a" * 17,
+])
+@pytest.mark.parametrize("limit", [0, 10, 60, 300, 480])
+def test_truncate_matches_the_linear_reference(draw, cjk, text, limit):
+    assert _truncate(draw, text, cjk, limit) == _truncate_linear(draw, text, cjk, limit)
 
 
 def _ink(img: Image.Image) -> tuple | None:
@@ -184,3 +304,11 @@ def test_title_underline_spans_the_mixed_title(tmp_path):
     expected = _textw(ImageDraw.Draw(img), title, ImageFont.truetype(CJK_PATH, 23))
     assert lit[0] == COL_TITLE_X
     assert abs(lit[-1] - (COL_TITLE_X + expected)) <= 1
+
+
+def test_default_font_from_bytes_falls_back_too():
+    font = ImageFont.load_default(23)
+    if not isinstance(font, ImageFont.FreeTypeFont):
+        pytest.skip("this Pillow's default font is a bitmap")
+    runs = T.split_runs("x 🎂", font)
+    assert runs == [("x ", font), ("🎂", T.emoji_font(23))]

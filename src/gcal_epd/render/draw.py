@@ -111,10 +111,16 @@ def _textw(draw: ImageDraw.ImageDraw, text: str, font, bold: int = 0) -> float:
 
 
 def _truncate(draw: ImageDraw.ImageDraw, text: str, font, max_width: float) -> str:
-    if text_width(draw, text, font) <= max_width:
+    # Double a prefix until it overflows, so a long title is measured only as
+    # far as the column reaches, never in full.
+    hi = 16
+    while hi < len(text) and text_width(draw, text[:hi], font) <= max_width:
+        hi *= 2
+    if hi >= len(text) and text_width(draw, text, font) <= max_width:
         return text
-    # Longest prefix that fits with the ellipsis; width only grows with length.
-    lo, hi = 0, len(text)
+    # Longest prefix that fits with the ellipsis; width only grows with length,
+    # and text[:hi] alone already overflows.
+    lo, hi = 0, min(hi, len(text)) - 1
     while lo < hi:
         mid = (lo + hi + 1) // 2
         if text_width(draw, text[:mid] + "…", font) <= max_width:
