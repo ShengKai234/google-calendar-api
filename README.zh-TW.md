@@ -19,6 +19,8 @@
 
 Pi Zero W 只有一張 2.4GHz 的 Wi‑Fi 網卡，連不上只有 5GHz 的網路。
 
+面板裝在相框裡，相框卡紙的開口是 139 × 87 mm，比面板 160 × 96 mm 的顯示區域小。所有畫面都依這個開口排版：800 × 480 像素中置中的 695 × 435（每像素 0.2 mm），卡紙底下填黑色。如果卡紙沒有置中，可以用 `frame_offset_px` 微調位置（見[設定檔](#設定檔)）。
+
 ---
 
 ## 運作方式
@@ -150,11 +152,21 @@ location = "Taipei"
 [display]
 output_path = "preview.png"           # 最後一次畫出的圖
 font_path = "assets/fonts/NotoSansCJKtc-Regular.otf"
+# frame_offset_px = [0, 0]            # 相框開口位置微調 [往右, 往下]，單位像素
 ```
 
 相對路徑以專案資料夾為準。修改 `feeds_file` 之後，要重跑 `bash deploy/install.sh`，讓 unit 改看新的檔案。
 
 只想改某一台的設定（例如換城市）時，把那幾項寫進日曆網址檔旁邊的 `config.local.toml`。它會疊在 `config.toml` 上面，而且不進版本控制。表格（table）逐項合併；`[[sources]]` 這類清單則整個取代原本的。這樣更新時可以改預設值，又不會蓋掉你的修改。
+
+`frame_offset_px` 就是這類設定。如果相框卡紙蓋住了某一邊一點點，下面這個 `config.local.toml` 會把內容往右移 4 px（0.8 mm）、往上移 2 px：
+
+```toml
+[display]
+frame_offset_px = [4, -2]
+```
+
+x 可以是 −52..53，y 是 −22..23；超出範圍會被忽略並記一筆警告。
 
 日曆網址檔、`config.local.toml` 和預覽圖是這台機器的「資料」。用 git checkout 時它們在專案資料夾裡；安裝成 release 後（見[安裝成 release](#安裝成-release)），它們在 `/opt/e-pages/data/`，和程式分開，所以更新永遠不會動到它們。
 

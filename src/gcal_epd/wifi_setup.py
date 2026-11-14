@@ -125,16 +125,18 @@ def _make_push(display: bool) -> Push:
         try:
             from gcal_epd.epd import push_to_display
             from gcal_epd.config import font_path, load_config
+            from gcal_epd.render.frame import frame_offset
             from gcal_epd.render.wifi_screens import render_wifi_connected, render_wifi_setup
 
-            font = font_path(load_config())
+            config = load_config()
+            font = font_path(config)
             if kind == "ap":
                 img = render_wifi_setup(kwargs["ap_ssid"], kwargs["ap_password"],
                                         kwargs["url"], error=kwargs.get("error", ""),
                                         font_path=font)
             else:
                 img = render_wifi_connected(kwargs["ssid"], font_path=font)
-            push_to_display(img)
+            push_to_display(img, frame_offset(config))
         except Exception as e:
             log.warning("Could not draw the Wi-Fi %s screen: %s", kind, e)
     return push
