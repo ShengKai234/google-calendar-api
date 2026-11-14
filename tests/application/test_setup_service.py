@@ -67,8 +67,17 @@ def test_push_setup_screen_never_raises(monkeypatch):
     """No panel attached (e.g. on a laptop) must not abort setup."""
     import gcal_epd.epd as epd
     monkeypatch.setattr(epd, "push_to_display",
-                        lambda img: (_ for _ in ()).throw(RuntimeError("no panel")))
+                        lambda img, offset: (_ for _ in ()).throw(RuntimeError("no panel")))
     setup_service.push_setup_screen({}, "http://x", "1")
+
+
+def test_push_setup_screen_passes_the_frame_offset(monkeypatch):
+    import gcal_epd.epd as epd
+    pushed = []
+    monkeypatch.setattr(epd, "push_to_display", lambda img, offset: pushed.append((img, offset)))
+    setup_service.push_setup_screen({"display": {"frame_offset_px": [-4, 6]}}, "http://x", "1")
+    assert len(pushed) == 1
+    assert pushed[0][1] == (-4, 6)
 
 
 # --- links parked by the Wi-Fi form ---

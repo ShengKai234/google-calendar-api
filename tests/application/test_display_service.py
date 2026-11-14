@@ -187,7 +187,19 @@ def test_run_push_display_calls_epd(mock_render, tmp_path):
             project_root=tmp_path,
             push_display=True,
         )
-        mock_epd_push.assert_called_once_with(fake_img)
+        mock_epd_push.assert_called_once_with(fake_img, (0, 0))
+
+
+@patch("gcal_epd.application.display_service.render")
+def test_run_push_display_passes_the_frame_offset(mock_render, tmp_path):
+    """[display] frame_offset_px reaches the panel push."""
+    from gcal_epd.application.display_service import run
+
+    config = {**_CONFIG, "display": {**_CONFIG.get("display", {}), "frame_offset_px": [3, -2]}}
+    with patch("gcal_epd.epd.push_to_display") as mock_epd_push:
+        run(event_repos=[_make_event_repo()], weather_repo=None, config=config,
+            project_root=tmp_path, push_display=True)
+    mock_epd_push.assert_called_once_with(mock_render.return_value, (3, -2))
 
 
 @patch("gcal_epd.application.display_service.render")

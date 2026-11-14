@@ -47,4 +47,5 @@ def run(
 
     if push_display:
         from gcal_epd.epd import push_to_display
-        push_to_display(img)
+        from gcal_epd.render.frame import frame_offset
+        push_to_display(img, frame_offset(config))

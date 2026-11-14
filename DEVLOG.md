@@ -660,3 +660,38 @@ from a Mac without sudo. Changes reached the Pi through that same script,
 not by hand. Every write was followed by `sync`, because the power is
 pulled at any moment. Docker must never bind-mount a file from the card,
 or it holds the card until Docker quits.
+
+---
+
+## 2026-11-14
+
+### 2026-11-14 — Fit every screen to a 139 × 87 mm photo-frame window (feat/frame-safe-area)
+
+**Problem:** the panel went into a photo frame whose mat opening is
+139 × 87 mm. The Waveshare 7.3" (F) shows 800 × 480 px over 160 × 96 mm
+(0.2 mm/px), so the mat hides 52–53 px left/right and 22–23 px top/bottom.
+Hidden were the first digit of the date, the right of the weather block, the
+"Updated" footer and, worst, the left of the Wi-Fi setup QR, which then
+would not scan.
+
+**Decisions:**
+- Reflow rather than scale: `WIDTH × HEIGHT` is now the window (695 × 435);
+  row and title fonts stay 21/23 px for reading at 1–2 m. Header and spacing
+  shrink a little (header 76, row 32, day gap 9, PADDING 12 = 2.4 mm off the
+  mat edge). Still 9 rows over three days, 8 over seven.
+- One place puts a screen on the panel: `render/frame.py` `to_panel()`,
+  called by `epd.push_to_display()`. Screens never know about the panel, so
+  the setup and Wi-Fi screens needed no change. `preview.png` is the window,
+  i.e. what you see in the frame.
+- `[display] frame_offset_px = [x, y]` nudges the window for an off-centre
+  mat; out-of-range or malformed values are logged and ignored.
+- The Wi-Fi hotspot password is never truncated: in the narrower column a
+  wide one (e.g. `mmmmwwwwmm`) steps its font down from 30 px until it fits.
+- Header measures the weather block first: a long location is truncated and
+  the weather icon is dropped rather than drawn over text.
+- Design by agy (Gemini 4 Hydrogen), plan review by codex: the review caught
+  an underline crossing descenders at UNDERLINE_DROP 12 (kept 14), a footer
+  too close to the mat, and the icon/location overlap.
+
+**Follow-ups:** emoji render as tofu (#38, separate branch). QR quiet zones
+are below the 4-module spec (pre-existing; scans fine so far).
