@@ -45,7 +45,9 @@ def push_setup_screen(config: dict, url: str, pin: str, error: str = "") -> None
     try:
         from gcal_epd.epd import push_to_display
         from gcal_epd.render.draw import render_setup
-        push_to_display(render_setup(url, pin=pin, font_path=font_path(config), error=error))
+        from gcal_epd.render.frame import frame_offset
+        push_to_display(render_setup(url, pin=pin, font_path=font_path(config), error=error),
+                        frame_offset(config))
     except Exception as e:
         log.warning("Could not draw the setup screen: %s", e)
 

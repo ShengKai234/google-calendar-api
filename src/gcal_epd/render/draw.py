@@ -241,57 +241,62 @@ def _draw_header(
     mid = (top + bottom) / 2
     upper_y = top + HEADER_H * 0.34
     lower_y = top + HEADER_H * 0.70
+    right = WIDTH - PADDING - 20
+
+    # Measure the weather block first: the left side gets whatever room is left.
+    icon_s = 22       # droplet / umbrella
+    gap = 5           # pictogram to its number
+    metric_gap = 14   # humidity to rain chance
+    block_w = 0.0
+    if weather:
+        line1 = f"{weather.temperature:.0f}°C {weather.condition}"
+        hum = f"{weather.humidity}%"
+        pop = f"{weather.precipitation_probability}%"
+        w1 = _textw(draw, line1, fonts["temp"], bold=1)
+        w2 = (
+            icon_s + gap + _textw(draw, hum, fonts["metric"])
+            + metric_gap
+            + icon_s + gap + _textw(draw, pop, fonts["metric"])
+        )
+        block_w = max(w1, w2)
 
     # --- Left: big date, then weekday over location ---
-    date_x = PADDING + 20
+    date_x = PADDING + 16
     date_str = f"{now.month:02d}/{now.day:02d}"
     _text(draw, (date_x, mid), date_str, fonts["date"], FG, anchor="lm", bold=2)
 
-    meta_x = date_x + _textw(draw, date_str, fonts["date"], bold=2) + 18
+    meta_x = date_x + _textw(draw, date_str, fonts["date"], bold=2) + 14
+    weekday = format_weekday(now.date())
     has_location = bool(weather and weather.location)
     # With no location beneath it, the weekday centres on the card instead.
-    _text(
-        draw,
-        (meta_x, upper_y if has_location else mid),
-        format_weekday(now.date()),
-        fonts["weekday"], FG, anchor="lm",
-    )
+    _text(draw, (meta_x, upper_y if has_location else mid), weekday,
+          fonts["weekday"], FG, anchor="lm")
+    meta_right = meta_x + _textw(draw, weekday, fonts["weekday"])
     if has_location:
-        _text(draw, (meta_x, lower_y), weather.location, fonts["location"], FG, anchor="lm")
+        # A long place name stops short of the weather block instead of running into it.
+        location = _truncate(draw, weather.location, fonts["location"],
+                             right - block_w - 12 - meta_x)
+        _text(draw, (meta_x, lower_y), location, fonts["location"], FG, anchor="lm")
+        meta_right = max(meta_right, meta_x + _textw(draw, location, fonts["location"]))
 
     if not weather:
         return
 
     # --- Right: condition line over humidity / rain-chance line ---
-    right = WIDTH - PADDING - 20
-    line1 = f"{weather.temperature:.0f}°C {weather.condition}"
-    w1 = _textw(draw, line1, fonts["temp"], bold=1)
-
-    icon_s = 24
-    gap = 5
-    hum = f"{weather.humidity}%"
-    pop = f"{weather.precipitation_probability}%"
-    w2 = (
-        icon_s + gap + _textw(draw, hum, fonts["metric"])
-        + 18
-        + icon_s + gap + _textw(draw, pop, fonts["metric"])
-    )
-
-    block_w = max(w1, w2)
     _text(draw, (right, upper_y), line1, fonts["temp"], FG, anchor="rm", bold=1)
 
     x = right - w2
     _draw_droplet(draw, x + icon_s / 2, lower_y, icon_s, ACCENT)
     x += icon_s + gap
     _text(draw, (x, lower_y), hum, fonts["metric"], FG, anchor="lm")
-    x += _textw(draw, hum, fonts["metric"]) + 18
+    x += _textw(draw, hum, fonts["metric"]) + metric_gap
     _draw_umbrella(draw, x + icon_s / 2, lower_y, icon_s, ACCENT)
     x += icon_s + gap
     _text(draw, (x, lower_y), pop, fonts["metric"], FG, anchor="lm")
 
-    icon_size = 54
-    icon_x = right - block_w - 14 - icon_size
-    if icon_x > meta_x + 40:  # only if it will not collide with the date block
+    icon_size = 50
+    icon_x = right - block_w - 12 - icon_size
+    if icon_x >= meta_right + 12:  # only if it clears the weekday / location text
         kind = _CONDITION_ICON.get(weather.condition, "")
         if kind:
             _draw_weather_icon(draw, kind, icon_x, mid - icon_size / 2, icon_size)
@@ -299,11 +304,12 @@ def _draw_header(
 
 def _draw_footer(draw: ImageDraw.ImageDraw, fonts: dict, now: datetime.datetime,
                  version: str = "") -> None:
-    y = HEIGHT - FOOTER_H / 2 - 2
+    # Baseline-anchored so the glyphs end above the mat's edge, PADDING up.
+    y = HEIGHT - PADDING - 2
     _text(draw, (COL_DATE_X, y), f"Updated {now.strftime('%H:%M')}", fonts["footer"], FG,
-          anchor="lm")
+          anchor="ls")
     if version:   # bottom right: which release drew this
-        _text(draw, (WIDTH - PADDING, y), f"v{version}", fonts["footer"], FG, anchor="rm")
+        _text(draw, (WIDTH - PADDING - 6, y), f"v{version}", fonts["footer"], FG, anchor="rs")
 
 
 def render(
@@ -318,14 +324,14 @@ def render(
     now = datetime.datetime.now(TW_TZ)
 
     fonts = {
-        "date": _load_font(font_path, 50),
-        "weekday": _load_font(font_path, 24),
+        "date": _load_font(font_path, 48),
+        "weekday": _load_font(font_path, 23),
         "location": _load_font(font_path, 19),
-        "temp": _load_font(font_path, 23),
-        "metric": _load_font(font_path, 21),
+        "temp": _load_font(font_path, 22),
+        "metric": _load_font(font_path, 20),
         "row": _load_font(font_path, 21),
         "title": _load_font(font_path, 23),
-        "footer": _load_font(font_path, 14),
+        "footer": _load_font(font_path, 13),
     }
 
     _draw_header(draw, fonts, now, weather)

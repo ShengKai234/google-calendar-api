@@ -38,6 +38,7 @@ flowchart TB
     LAYOUT["layout.py<br/>build_layout()"]
     WSCR["wifi_screens.py"]
     TEXT["text.py<br/>emoji font fallback"]
+    FRAME["frame.py<br/>to_panel() · frame_offset()"]
   end
   DOM["domain<br/>CalendarEvent · WeatherInfo<br/>Repository Protocols"]
   EPD["epd.py push_to_display()<br/>→ vendor/waveshare_epd"]
@@ -72,6 +73,8 @@ flowchart TB
   WSCR -->|"fonts, text helpers"| DRAW
   DRAW --> LAYOUT
   DRAW -->|"split_runs · draw_runs"| TEXT
+  EPD --> FRAME
+  FRAME --> LAYOUT
   LAYOUT --> DOM
   ICS --> DOM
   OM --> DOM

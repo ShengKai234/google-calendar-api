@@ -224,3 +224,21 @@ def test_no_links_nothing_parked():
     stashed = []
     _run(FakeNM(), [("Home", "correct-horse", [])], stash_feeds=stashed.append)
     assert stashed == []
+
+
+# --- the panel push ---
+
+@pytest.mark.parametrize("kind,kwargs", [
+    ("ap", {"ap_ssid": "ePaper-Setup-AB12", "ap_password": "abcdefgh23", "url": "http://10.42.0.1"}),
+    ("connected", {"ssid": "Home"}),
+])
+def test_push_passes_the_frame_offset(monkeypatch, kind, kwargs):
+    import gcal_epd.config as config_mod
+    import gcal_epd.epd as epd
+    pushed = []
+    monkeypatch.setattr(config_mod, "load_config",
+                        lambda: {"display": {"frame_offset_px": [2, 1]}})
+    monkeypatch.setattr(epd, "push_to_display", lambda img, offset: pushed.append((img, offset)))
+    wifi_setup._make_push(True)(kind, **kwargs)
+    assert len(pushed) == 1
+    assert pushed[0][1] == (2, 1)
