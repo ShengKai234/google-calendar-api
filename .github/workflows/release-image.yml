@@ -1,0 +1,58 @@
+# Release: push a tag like v1.0.0 and this builds the ready-to-flash image
+# (image/build-in-docker.sh) and attaches it to a GitHub Release.
+# Run by hand from the Actions tab to build without releasing; the image is
+# then kept as a workflow artifact.
+name: Release image
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements.txt -e ".[dev]"
+      - run: pytest -q
+
+  image:
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # git describe needs the tags
+      # ARM emulation for the chroot (binfmt with the fix-binary flag).
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm
+      - name: Cache the base Raspberry Pi OS image
+        uses: actions/cache@v4
+        with:
+          path: image/dist/cache
+          key: base-${{ hashFiles('image/base.env') }}
+      - name: Build
+        # A tag names the image; otherwise build-in-docker.sh uses git describe.
+        run: VERSION="${{ github.ref_type == 'tag' && github.ref_name || '' }}" bash image/build-in-docker.sh
+      - uses: actions/upload-artifact@v4
+        if: github.ref_type != 'tag'
+        with:
+          name: e-pages-image
+          path: image/dist/e-pages-*.img.xz*
+          retention-days: 7
+      - name: Publish the release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" image/dist/e-pages-*.img.xz* \
+            --title "$GITHUB_REF_NAME" --generate-notes
