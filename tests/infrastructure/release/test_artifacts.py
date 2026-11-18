@@ -237,6 +237,29 @@ def test_sdcard_zip_is_one_epd_bundle_folder(tmp_path):
                                         "epd-bundle/firstboot.sh", "epd-bundle/wheels/a.whl"]
 
 
+def test_sdcard_zip_carries_the_license_notices_beside_the_debs(tmp_path):
+    app = tmp_path / "x.tar.gz"
+    app.write_bytes(b"code")
+    fb = tmp_path / "firstboot.sh"
+    fb.write_text("#!/bin/bash\n")
+    for folder in ("wheels", "debs"):
+        (tmp_path / folder).mkdir()
+    notices = []
+    for name in ("LICENSE", "THIRD_PARTY_NOTICES.md"):
+        (tmp_path / name).write_text(name)
+        notices.append(tmp_path / name)
+    out = tmp_path / "s.zip"
+    artifacts.sdcard_zip(out, app, tmp_path / "wheels", tmp_path / "debs", fb, notices)
+    with zipfile.ZipFile(out) as z:
+        assert z.read("epd-bundle/LICENSE") == b"LICENSE"
+        assert z.read("epd-bundle/THIRD_PARTY_NOTICES.md") == b"THIRD_PARTY_NOTICES.md"
+
+
+def test_the_bundled_notices_exist_in_the_repo():
+    for name in artifacts.NOTICES:
+        assert (PROJECT_ROOT / name).is_file(), name
+
+
 def test_sums_are_in_sha256sum_format(tmp_path):
     (tmp_path / "b").write_bytes(b"bee")
     (tmp_path / "a").write_bytes(b"ay")
