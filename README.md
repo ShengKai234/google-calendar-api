@@ -348,6 +348,7 @@ the scheduled refresh — until the next reboot.
 | A unit is "skipped because of an unmet condition" | Expected: `gcal-epd` waits for calendar links, `epd-feed-setup` stands down once they exist. |
 | Hotspot never appears | `journalctl -b -u epd-wifi-setup`. Another interface on `10.42.0.x` stops it, and the log names the interface. |
 | Calendar titles show as boxes | The CJK font was not found; check `font_path` in `config.toml`. |
+| Emoji in titles show as boxes | `assets/fonts/NotoEmoji-VariableFont_wght.ttf` is missing (it ships with the code), or the emoji is newer than the font. Emoji are drawn in black and white. |
 
 ---
 
@@ -373,16 +374,18 @@ google-calendar-api/
 │   │   ├── onboarding/      # Calendar setup web form (LAN, PIN)
 │   │   ├── release/         # Release layout, build, migration from a checkout
 │   │   └── wifi/            # NetworkManager wrapper + hotspot web form
-│   ├── render/              # layout.py, draw.py, wifi_screens.py
+│   ├── render/              # layout.py, draw.py, text.py, wifi_screens.py
 │   └── epd.py               # Push an image to the panel
 ├── vendor/waveshare_epd/    # Waveshare driver
-├── assets/fonts/            # NotoSansCJKtc-Regular.otf
+├── assets/fonts/            # NotoSansCJKtc-Regular.otf, NotoEmoji + licenses (*-OFL.txt)
 ├── deploy/                  # setup.sh, install.sh, install-release.sh, unit templates
 │   ├── sdcard/              # prepare.sh (Mac), firstboot.sh (Pi), debs.lock
 │   └── release/             # sign.sh, allowed_signers
 ├── docs/                    # Architecture, deployment
 ├── tests/
 ├── config.toml              # Runtime configuration (tracked)
+├── LICENSE                  # MIT
+├── THIRD_PARTY_NOTICES.md   # Fonts, driver, Python and Debian packages, data
 ├── ics_feeds.example.toml   # Template for ics_feeds.toml (gitignored — secret)
 └── test_display.py          # Standalone panel test
 ```
@@ -407,3 +410,25 @@ CI (`.github/workflows/ci.yml`) runs the same `pytest -q` on Python 3.11
 (dev) and 3.13 (the Pi) for every pull request, and shellchecks
 `deploy/*.sh` and `deploy/*/*.sh`. A `vX.Y.Z` tag runs
 `.github/workflows/release.yml`; see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+---
+
+## License
+
+e-pages is under the [MIT License](LICENSE), copyright Kai (ShengKai234).
+
+It ships the work of others under their own licenses: the Noto fonts
+(SIL OFL 1.1), the Waveshare driver, Python packages and, on the SD card,
+Debian packages including GPL ones. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+lists each with its license and where its source is.
+
+Weather data by [Open-Meteo.com](https://open-meteo.com/), under
+[CC BY 4.0](https://open-meteo.com/en/licence). Open-Meteo's free API is
+for non-commercial use only.
+
+## Acknowledgements
+
+The idea for e-pages came from [Glance](https://github.com/bolintw/Glance)
+by Bo Lin, an e-paper calendar in a picture frame. e-pages is a separate
+implementation in Python for the Raspberry Pi and contains no code, text
+or images from Glance.
