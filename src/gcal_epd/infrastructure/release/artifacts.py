@@ -46,6 +46,9 @@ BUILD_REQUIREMENTS = "requirements-build.txt"
 
 DEBS_LOCK = Path("deploy/sdcard/debs.lock")
 FIRSTBOOT = Path("deploy/sdcard/firstboot.sh")
+# Beside the .deb files in the SD card bundle: the GPL ones need the notice
+# saying where their source is, not only the copy inside app.tar.gz.
+NOTICES = [Path("LICENSE"), Path("THIRD_PARTY_NOTICES.md")]
 BUNDLE_DIR = "epd-bundle"
 SUMS = "SHA256SUMS"
 
@@ -275,12 +278,15 @@ def download_debs(lock: DebsLock, dest: Path, fetch: Fetch = fetch) -> list[str]
 
 # --- the SD card bundle and the checksums ------------------------------------
 
-def sdcard_zip(out: Path, app: Path, wheels: Path, debs: Path, firstboot: Path) -> None:
+def sdcard_zip(out: Path, app: Path, wheels: Path, debs: Path, firstboot: Path,
+               notices: list[Path] = ()) -> None:
     """epd-bundle/ as deploy/sdcard/prepare.sh copies it to a boot partition:
-    app.tar.gz, wheels/, debs/, firstboot.sh."""
+    app.tar.gz, wheels/, debs/, firstboot.sh, and the license `notices`."""
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         z.write(app, f"{BUNDLE_DIR}/app.tar.gz")
         z.write(firstboot, f"{BUNDLE_DIR}/firstboot.sh")
+        for f in notices:
+            z.write(f, f"{BUNDLE_DIR}/{f.name}")
         for folder in (wheels, debs):
             for f in sorted(folder.iterdir()):
                 z.write(f, f"{BUNDLE_DIR}/{folder.name}/{f.name}")
