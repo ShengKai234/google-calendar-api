@@ -306,13 +306,15 @@ google-calendar-api/
 │   ├── render/              # layout.py、draw.py、wifi_screens.py
 │   └── epd.py               # 把圖推到面板
 ├── vendor/waveshare_epd/    # Waveshare 驅動
-├── assets/fonts/            # NotoSansCJKtc-Regular.otf
+├── assets/fonts/            # NotoSansCJKtc-Regular.otf 與它的授權（*-OFL.txt）
 ├── deploy/                  # setup.sh、install.sh、install-release.sh、unit 範本
 │   ├── sdcard/              # prepare.sh（Mac）、firstboot.sh（Pi）、debs.lock
 │   └── release/             # sign.sh、allowed_signers
 ├── docs/                    # 架構、部署文件
 ├── tests/
 ├── config.toml              # 執行設定（納入版本控制）
+├── LICENSE                  # MIT
+├── THIRD_PARTY_NOTICES.md   # 字型、驅動、Python 與 Debian 套件、資料的授權
 ├── ics_feeds.example.toml   # ics_feeds.toml 的範本（ics_feeds.toml 本身是機密，不進版本控制）
 └── test_display.py          # 獨立的面板測試
 ```
@@ -331,3 +333,17 @@ venv/bin/python -m gcal_epd.main    # 畫出 preview.png；不需要面板
 文件有英文和繁體中文兩個版本，以英文為準。修改某個章節時，請同步修改 `.zh-TW.md` 裡對應的章節。有一個測試會檢查兩個版本的標題和圖保持一致。
 
 CI（`.github/workflows/ci.yml`）會在每個 pull request 以 Python 3.11（開發機）和 3.13（Pi）執行同樣的 `pytest -q`，並用 shellcheck 檢查 `deploy/*.sh` 和 `deploy/*/*.sh`。推送 `vX.Y.Z` tag 會執行 `.github/workflows/release.yml`，見 [docs/DEPLOYMENT.zh-TW.md](docs/DEPLOYMENT.zh-TW.md)。
+
+---
+
+## 授權
+
+e-pages 採用 [MIT 授權](LICENSE)，著作權屬於 Kai (ShengKai234)。
+
+專案裡也附帶了其他人的作品，各自依照它們的授權：Noto 字型（SIL OFL 1.1）、Waveshare 驅動、Python 套件，以及 SD 卡上的 Debian 套件（其中有 GPL 授權的）。[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 逐一列出它們的授權和原始碼位置（該檔只有英文版）。
+
+天氣資料來自 [Open-Meteo.com](https://open-meteo.com/)，採用 [CC BY 4.0](https://open-meteo.com/en/licence) 授權。Open-Meteo 的免費 API 僅限非商業用途。
+
+## 致謝
+
+e-pages 的構想啟發自 Bo Lin 的 [Glance](https://github.com/bolintw/Glance)，一個放在相框裡的電子紙日曆。e-pages 是以 Python 在 Raspberry Pi 上獨立實作的，沒有使用 Glance 的任何程式碼、文字或圖片。

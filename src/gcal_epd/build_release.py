@@ -60,7 +60,8 @@ def build(source: Source, out: Path | None = None) -> Path:
 
         log.info("SD card bundle...")
         artifacts.sdcard_zip(out / names.sdcard, app, wheels, debs,
-                             code / artifacts.FIRSTBOOT)
+                             code / artifacts.FIRSTBOOT,
+                             [code / n for n in artifacts.NOTICES])
 
     artifacts.write_sums(out, [names.app, names.wheels, names.sdcard])
     for f in sorted(out.iterdir()):
