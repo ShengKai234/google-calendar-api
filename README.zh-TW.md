@@ -278,6 +278,7 @@ sudo systemd-run --working-directory=$PWD \
 | unit 顯示「skipped because of an unmet condition」 | 正常現象：`gcal-epd` 會等到有日曆網址才執行，`epd-feed-setup` 在有日曆網址後就不再執行。 |
 | 熱點一直沒出現 | 看 `journalctl -b -u epd-wifi-setup`。如果有其他網卡占用 `10.42.0.x`，熱點會停止啟動，log 會寫出是哪個網卡。 |
 | 日曆標題顯示成方框 | 找不到中文字型，檢查 `config.toml` 的 `font_path`。 |
+| 標題裡的 emoji 顯示成方框 | 缺少 `assets/fonts/NotoEmoji-VariableFont_wght.ttf`（它隨程式碼一起發布），或是這個 emoji 比字型還新。emoji 只會以黑白顯示。 |
 
 ---
 
@@ -303,10 +304,10 @@ google-calendar-api/
 │   │   ├── onboarding/      # 日曆設定網頁表單（家裡網路，需 PIN）
 │   │   ├── release/         # release 配置、建置、從 checkout 遷移
 │   │   └── wifi/            # NetworkManager 包裝 + 熱點網頁表單
-│   ├── render/              # layout.py、draw.py、wifi_screens.py
+│   ├── render/              # layout.py、draw.py、text.py、wifi_screens.py
 │   └── epd.py               # 把圖推到面板
 ├── vendor/waveshare_epd/    # Waveshare 驅動
-├── assets/fonts/            # NotoSansCJKtc-Regular.otf 與它的授權（*-OFL.txt）
+├── assets/fonts/            # NotoSansCJKtc-Regular.otf、NotoEmoji 與授權（*-OFL.txt）
 ├── deploy/                  # setup.sh、install.sh、install-release.sh、unit 範本
 │   ├── sdcard/              # prepare.sh（Mac）、firstboot.sh（Pi）、debs.lock
 │   └── release/             # sign.sh、allowed_signers

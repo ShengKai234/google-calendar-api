@@ -33,6 +33,7 @@ flowchart TB
     DRAW["draw.py<br/>render() · render_setup()"]
     LAYOUT["layout.py<br/>build_layout()"]
     WSCR["wifi_screens.py"]
+    TEXT["text.py<br/>emoji 備用字型"]
     FRAME["frame.py<br/>to_panel() · frame_offset()"]
   end
   DOM["domain<br/>CalendarEvent · WeatherInfo<br/>Repository Protocol"]
@@ -67,6 +68,7 @@ flowchart TB
   WS -->|"validate_feed_url"| ONB
   WSCR -->|"字型、文字工具"| DRAW
   DRAW --> LAYOUT
+  DRAW -->|"split_runs · draw_runs"| TEXT
   EPD --> FRAME
   FRAME --> LAYOUT
   LAYOUT --> DOM
