@@ -25,6 +25,7 @@ roll back if not.
 Standard library only, so it runs before any venv exists.
 """
 import argparse
+import fcntl
 import logging
 import os
 import pwd
@@ -34,6 +35,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -52,6 +54,7 @@ REFRESH_UNIT = "gcal-epd.service"
 # A release whose build fails this many times is not tried again.
 MAX_ATTEMPTS = 3
 DOWNLOAD_PREFIX = ".download-"
+UPDATE_LOCK = ".update.lock"
 
 
 class Terminated(BaseException):
@@ -196,16 +199,20 @@ def health_check(layout: ReleaseLayout, user: str, run=installer.run) -> bool:
     return True
 
 
-def _go_back(layout: ReleaseLayout, label: str, user: str, run, no_units: bool) -> None:
+def _go_back(layout: ReleaseLayout, label: str, user: str, run, no_units: bool,
+             units: bool = False) -> None:
     """Stopped mid-update: run `label` (the release that was running) again,
     with its own units. switch() is a rename(2), so at every instant one
-    whole release is current; the units are reinstalled best effort."""
-    if layout.current() == label or not layout.is_complete(label):
+    whole release is current; the units are reinstalled best effort, when
+    it switched back or `units` says they may be half-installed."""
+    if not layout.is_complete(label):
         return
-    log.error("Stopped mid-update: going back to %s.", label)
-    with layout.locked():
-        layout.switch(label)
-    if not no_units:
+    switched = layout.current() != label
+    if switched:
+        log.error("Stopped mid-update: going back to %s.", label)
+        with layout.locked():
+            layout.switch(label)
+    if (switched or units) and not no_units:
         try:
             _install_units(layout, user, run)
         except InstallError as e:
@@ -250,6 +257,24 @@ def update(args, layout: ReleaseLayout, run=installer.run, fetch=updater.fetch,
         log.info("Updates are off ([update] enabled = false).")
         return None
     channel = args.channel or settings.channel
+    with _one_update(layout):
+        return _update(args, layout, run, fetch, download, now, current, settings, channel)
+
+
+@contextmanager
+def _one_update(layout: ReleaseLayout):
+    """One `releases update` at a time: a second one (say, by hand) would
+    clean up the first one's download as a leftover."""
+    layout.base.mkdir(parents=True, exist_ok=True)
+    with open(layout.base / UPDATE_LOCK, "w") as f:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise InstallError("An update is already running.") from None
+        yield
+
+
+def _update(args, layout, run, fetch, download, now, current, settings, channel):
     clean_leftovers(layout)
     state = updater.State.load(layout.data)
     state.last_check = now()
@@ -273,7 +298,11 @@ def update(args, layout: ReleaseLayout, run=installer.run, fetch=updater.fetch,
         state.last_result = f"failed: {e}".splitlines()[0]
         raise
     except Terminated:
-        state.last_result = (f"stopped by its time limit; still on {layout.current()}")
+        now_on = layout.current()
+        state.last_result = (
+            f"updated {current} -> {now_on}; stopped while starting the refresh"
+            if now_on != current and state.updated_to == now_on
+            else f"stopped by its time limit; still on {now_on}")
         raise
     finally:
         state.save(layout.data)
@@ -290,6 +319,7 @@ def _apply(cand, current, layout, state, run, fetch, download, now, no_units) ->
         state.rejected.append(cand.label)   # the next run skips it
     # On disk before the long part: a SIGKILL leaves no time to save it.
     state.save(layout.data)
+    healthy = None
     try:
         with tempfile.TemporaryDirectory(dir=layout.base, prefix=DOWNLOAD_PREFIX) as tmp:
             app, wheels = updater.fetch_release(cand, Path(tmp),
@@ -301,8 +331,16 @@ def _apply(cand, current, layout, state, run, fetch, download, now, no_units) ->
             install(SimpleNamespace(source=str(app), user=user, wheels=str(wheels),
                                     migrate_from=None, no_units=no_units), layout, run)
         healthy = health_check(layout, user, run)
+        if not healthy:
+            attempts.pop(cand.label, None)
+            if cand.label not in state.rejected:
+                state.rejected.append(cand.label)
+            switch(SimpleNamespace(version=None, user=user, no_units=no_units), layout, run)
     except Terminated:
-        _go_back(layout, current, user, run, no_units)
+        if healthy is not True:
+            # Stopped before the new release proved itself, or while rolling
+            # back from one that did not: the old one, with its own units.
+            _go_back(layout, current, user, run, no_units, units=healthy is False)
         raise
     if healthy:
         attempts.pop(cand.label, None)   # counted as a failure until here
@@ -313,10 +351,6 @@ def _apply(cand, current, layout, state, run, fetch, download, now, no_units) ->
         if not no_units:
             _refresh_panel(run)
         return cand.label
-    switch(SimpleNamespace(version=None, user=user, no_units=no_units), layout, run)
-    attempts.pop(cand.label, None)
-    if cand.label not in state.rejected:
-        state.rejected.append(cand.label)
     raise InstallError(f"{cand.label} failed its health check; rolled back to "
                        f"{layout.current()} and will not try it again.")
 
