@@ -214,3 +214,98 @@ def test_status_shows_the_state(tmp_path, key, layout, capsys):
     assert "current   0.2.0" in out
     assert "channel   stable" in out
     assert "rejected  0.3.0" in out
+
+
+# --- an update stopped by its time limit (epd-update.service TimeoutStartSec)
+class StoppedRun(FakeRun):
+    """systemd's SIGTERM, which releases turns into Terminated, arrives the
+    first time a command containing `word` runs."""
+    def __init__(self, word, **kw):
+        super().__init__(**kw)
+        self.word, self.stopped = word, False
+
+    def __call__(self, cmd, **kwargs):
+        if not self.stopped and self.word in " ".join(map(str, cmd)):
+            self.stopped = True
+            self.commands.append((cmd, kwargs.get("cwd")))
+            raise releases.Terminated()
+        return super().__call__(cmd, **kwargs)
+
+
+def test_update_stopped_during_the_build_keeps_the_old_release(tmp_path, key, layout):
+    fetch, download = github(tmp_path, key, ("0.3.0", False))
+    with pytest.raises(releases.Terminated):
+        update(layout, StoppedRun("pip"), fetch, download)
+    assert layout.current() == "0.2.0"
+    assert not layout.is_complete("0.3.0")
+    assert not list(layout.base.glob(".download-*"))
+    state = updater.State.load(layout.data)
+    assert state.attempts == {"0.3.0": 1}                 # one failure
+    assert state.last_result.startswith("stopped")
+
+
+@pytest.mark.parametrize("word", ["install.sh", "--no-setup"])
+def test_update_stopped_after_the_switch_goes_back(tmp_path, key, layout, word):
+    """Stopped while the units are installed or the new release renders:
+    the Pi is put back on the release it was running, units included."""
+    fetch, download = github(tmp_path, key, ("0.3.0", False))
+    units_for = []
+
+    class Watch(StoppedRun):
+        def __call__(self, cmd, **kwargs):
+            if "install.sh" in " ".join(map(str, cmd)):
+                units_for.append(layout.current())
+            return super().__call__(cmd, **kwargs)
+    run = Watch(word)
+    with pytest.raises(releases.Terminated):
+        update(layout, run, fetch, download)
+    assert layout.current() == "0.2.0"
+    assert units_for[0] == "0.3.0" and units_for[-1] == "0.2.0"   # units went back too
+    assert not run.ran("systemctl")         # no refresh started by a stopped update
+    assert updater.State.load(layout.data).attempts == {"0.3.0": 1}
+
+
+def test_the_attempt_is_on_disk_before_the_build(tmp_path, key, layout):
+    """A SIGKILL leaves no time to save: the failure must already be counted."""
+    fetch, download = github(tmp_path, key, ("0.3.0", False))
+    seen = []
+
+    class Peek(FakeRun):
+        def __call__(self, cmd, **kwargs):
+            if "venv" in cmd:
+                seen.append(updater.State.load(layout.data).attempts.get("0.3.0"))
+            return super().__call__(cmd, **kwargs)
+    update(layout, Peek(), fetch, download)
+    assert seen == [1]
+
+
+def test_a_release_stopped_every_time_is_given_up(tmp_path, key, layout):
+    fetch, download = github(tmp_path, key, ("0.3.0", False))
+    for _ in range(releases.MAX_ATTEMPTS):
+        with pytest.raises(releases.Terminated):
+            update(layout, StoppedRun("pip"), fetch, download)
+    assert "0.3.0" in updater.State.load(layout.data).rejected
+    assert update(layout, FakeRun(), fetch, download) is None
+    assert layout.current() == "0.2.0"
+
+
+def test_leftovers_are_cleaned_before_every_check(tmp_path, key, layout):
+    """A build or download cut short by a timeout or a power cut goes, even
+    when there is nothing new to install."""
+    (layout.base / ".download-old").mkdir()
+    half = layout.begin("0.9.9")            # INCOMPLETE
+    (half / "junk").write_text("x")
+    fetch, download = github(tmp_path, key, ("0.2.0", False))
+    assert update(layout, FakeRun(), fetch, download) is None
+    assert not (layout.base / ".download-old").exists()
+    assert not half.exists()
+    assert layout.current() == "0.2.0" and layout.is_complete("0.2.0")
+
+
+def test_sigterm_becomes_terminated(monkeypatch):
+    import signal
+    handlers = {}
+    monkeypatch.setattr(signal, "signal", lambda sig, h: handlers.__setitem__(sig, h))
+    releases._stop_on_sigterm()
+    with pytest.raises(releases.Terminated):
+        handlers[signal.SIGTERM](signal.SIGTERM, None)

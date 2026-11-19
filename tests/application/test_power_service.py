@@ -430,3 +430,14 @@ def test_unknown_update_state_keeps_it_on(tmp_path):
     assert decide(rig.manager.snapshot()).power_off
     del rig.system.units["epd-update.service"]
     assert "state unknown" in decide(rig.manager.snapshot()).reason
+
+
+def test_a_refresh_stopped_by_its_time_limit_powers_off_normally(tmp_path):
+    """gcal-epd.service ran past TimeoutStartSec: systemd stopped it and it
+    "failed". Like any finished refresh: grace, alarm, off."""
+    rig = Rig(tmp_path, now=at(6, 59), uptime=240.0)
+    rig.system.units["gcal-epd.service"] = UnitState("failed", 230.0)    # 06:58:50
+    assert not decide(rig.manager.snapshot()).power_off                  # grace
+    rig.t, rig.mono = at(7, 1), 360.0
+    assert decide(rig.manager.snapshot()).power_off
+    assert rig.manager.run() == "powered-off"

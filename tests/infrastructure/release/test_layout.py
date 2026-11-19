@@ -158,3 +158,28 @@ def test_prune_never_removes_current_even_with_keep_zero(layout):
 def test_locked_creates_the_base(layout):
     with layout.locked():
         assert layout.base.is_dir()
+
+
+@pytest.mark.parametrize("killed_at", [1, 2])
+def test_a_kill_during_switch_leaves_a_whole_release(layout, monkeypatch, killed_at):
+    """The update's time limit can strike mid-switch: `current` must name
+    a whole release whichever rename(2) it hit, and the next switch works."""
+    import gcal_epd.infrastructure.release.layout as module
+    for label in ("0.2.0", "0.3.0"):
+        layout.begin(label)
+        layout.finish(label)
+    layout.switch("0.2.0")
+    real, calls = module.os.replace, []
+
+    def replace(src, dst):
+        calls.append(dst)
+        if len(calls) == killed_at:
+            raise KeyboardInterrupt   # stands in for the SIGTERM
+        real(src, dst)
+    monkeypatch.setattr(module.os, "replace", replace)
+    with pytest.raises(KeyboardInterrupt):
+        layout.switch("0.3.0")
+    assert layout.current() == "0.2.0" and layout.is_complete(layout.current())
+    monkeypatch.setattr(module.os, "replace", real)
+    layout.switch("0.3.0")
+    assert (layout.current(), layout.previous()) == ("0.3.0", "0.2.0")
