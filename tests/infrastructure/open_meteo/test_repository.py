@@ -13,20 +13,10 @@ from gcal_epd.infrastructure.open_meteo.repository import (
 )
 
 
-@pytest.fixture(autouse=True)
-def inline_download(monkeypatch):
-    from gcal_epd.infrastructure import fetch_budget
-    monkeypatch.setattr(fetch_budget, "run_bounded", lambda fn, args, limit: fn(*args, limit))
-
-
 def _fake_response(payload: dict):
     """Return a mock context-manager that yields a readable response."""
     raw = json.dumps(payload).encode()
-    mock_resp = MagicMock()
-    mock_resp.read.side_effect = BytesIO(raw).read
-    mock_resp.__enter__ = lambda s: s
-    mock_resp.__exit__ = MagicMock(return_value=False)
-    return mock_resp
+    return BytesIO(raw)
 
 
 _CLEAR_PAYLOAD = {

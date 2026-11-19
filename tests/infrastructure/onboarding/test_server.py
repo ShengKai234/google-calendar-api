@@ -295,3 +295,17 @@ def test_form_shows_notice(tmp_path):
         except Exception:
             time.sleep(0.05)
     assert "not a calendar (iCal) file" in body
+
+
+def test_safe_download_reason_is_shown_without_the_url(monkeypatch):
+    from gcal_epd.infrastructure.fetch_budget import FetchFailure
+    from gcal_epd.infrastructure.ics.repository import ICSRepository
+    from gcal_epd.infrastructure.onboarding.server import inspect_feed
+    def fail(self):
+        raise FetchFailure("timed out after 40 s")
+    monkeypatch.setattr(ICSRepository, "fetch_raw", fail)
+    count, problem = inspect_feed("https://calendar.example.test/placeholder")
+    assert count == 0 and "timed out after 40 s" in problem
+    assert "calendar.example.test" in problem
+    if "/placeholder" in problem:
+        pytest.fail("onboarding diagnostic exposed a URL path", pytrace=False)

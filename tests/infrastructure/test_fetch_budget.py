@@ -1,6 +1,7 @@
 """Bounded network fetching: fake transports and a controllable monotonic clock."""
 import json
-import threading
+import socket
+import signal
 from unittest.mock import MagicMock
 
 import pytest
@@ -23,18 +24,20 @@ def clock():
     return Clock()
 
 
-@pytest.fixture
-def inline(monkeypatch):
-    # Exercise transport logic with shared fake state. The separate worker
-    # tests below exercise the actual process deadline and cleanup.
-    monkeypatch.setattr(fb, "run_bounded", lambda fn, args, limit: fn(*args, limit))
+@pytest.fixture(autouse=True)
+def no_processes(monkeypatch):
+    import multiprocessing
+    def forbidden(*args, **kwargs):
+        raise AssertionError("HTTP downloads must not start a subprocess")
+    monkeypatch.setattr(multiprocessing, "get_context", forbidden)
 
 
 class Response:
+    __slots__ = ("clock", "chunks", "elapsed", "closed", "status_code")
     def __init__(self, clock, chunks=(), elapsed=0):
         self.clock, self.chunks, self.elapsed = clock, list(chunks), elapsed
         self.closed = False
-        self.fp = MagicMock()
+        self.status_code = 200
 
     def raise_for_status(self):
         pass
@@ -44,7 +47,7 @@ class Response:
             self.clock.now += self.elapsed
             yield chunk
 
-    def read(self, size):
+    def read1(self, size):
         self.clock.now += self.elapsed
         return self.chunks.pop(0) if self.chunks else b""
 
@@ -64,7 +67,7 @@ WEATHER = json.dumps({"current": {"temperature_2m": 23, "relative_humidity_2m": 
 URL = "https://calendar.example.test/private-placeholder/calendar.ics?token=placeholder"
 
 
-def test_requests_receives_connect_read_limits(inline, clock, monkeypatch):
+def test_requests_receives_connect_read_limits(clock, monkeypatch):
     response = Response(clock, [ICS])
     get = MagicMock(return_value=response)
     monkeypatch.setattr(ics.requests, "get", get)
@@ -74,18 +77,17 @@ def test_requests_receives_connect_read_limits(inline, clock, monkeypatch):
     assert response.closed
 
 
-def test_urllib_receives_connect_and_body_read_limits(inline, clock, monkeypatch):
+def test_urllib_uses_timeout_and_public_stream_only(clock, monkeypatch):
     response = Response(clock, [WEATHER])
     open_ = MagicMock(return_value=response)
     monkeypatch.setattr(meteo.urllib.request, "urlopen", open_)
     assert meteo.OpenMeteoRepository(0, 0, clock=clock).fetch_weather().temperature == 23
     assert open_.call_args.kwargs["timeout"] == 10
-    response.fp.raw._sock.settimeout.assert_called_with(30)
     assert response.closed
 
 
 @pytest.mark.parametrize("kind", ["ics", "weather"])
-def test_slow_drip_body_hits_whole_request_cap(kind, inline, clock, monkeypatch):
+def test_slow_drip_body_hits_whole_request_cap(kind, clock, monkeypatch):
     response = Response(clock, [b"x"] * 100, elapsed=9)
     if kind == "ics":
         monkeypatch.setattr(ics.requests, "get", MagicMock(return_value=response))
@@ -98,7 +100,7 @@ def test_slow_drip_body_hits_whole_request_cap(kind, inline, clock, monkeypatch)
     assert response.closed
 
 
-def test_all_sources_share_budget_and_keep_earlier_results(inline, clock, monkeypatch, caplog):
+def test_all_sources_share_budget_and_keep_earlier_results(clock, monkeypatch, caplog):
     budget = fb.FetchBudget(clock=clock)
     responses = [Response(clock, [ICS], elapsed=10), Response(clock, [b"x"] * 100, elapsed=10),
                  Response(clock, [b"x"] * 100, elapsed=10)]
@@ -116,11 +118,12 @@ def test_all_sources_share_budget_and_keep_earlier_results(inline, clock, monkey
     assert "Skipped (calendar.example.test)" in caplog.text
     assert "api.open-meteo.com" in caplog.text
     assert "budget" in caplog.text.lower()
-    assert URL not in caplog.text and "private-placeholder" not in caplog.text
+    if URL in caplog.text or "private-placeholder" in caplog.text:
+        pytest.fail("unsafe feed diagnostic", pytrace=False)
 
 
 @pytest.mark.parametrize("kind", ["ics", "weather"])
-def test_request_limits_shrink_to_remaining_budget(kind, inline, clock, monkeypatch):
+def test_request_limits_shrink_to_remaining_budget(kind, clock, monkeypatch):
     budget = fb.FetchBudget(clock=clock)
     clock.now = 86
     response = Response(clock, [ICS if kind == "ics" else WEATHER])
@@ -134,70 +137,27 @@ def test_request_limits_shrink_to_remaining_budget(kind, inline, clock, monkeypa
         monkeypatch.setattr(meteo.urllib.request, "urlopen", open_)
         assert meteo.OpenMeteoRepository(0, 0, budget=budget).fetch_weather().temperature == 23
         assert open_.call_args.kwargs["timeout"] == 4
-        response.fp.raw._sock.settimeout.assert_called_with(4)
 
 
-@pytest.mark.parametrize("failure", [OSError(URL), ValueError(URL)])
-def test_errors_containing_urls_are_not_logged(failure, inline, clock, monkeypatch, caplog):
+@pytest.mark.parametrize("failure", [OSError(URL), ValueError(URL)], ids=["network", "invalid"])
+def test_errors_containing_urls_are_not_logged(failure, clock, monkeypatch, caplog):
     monkeypatch.setattr(ics.requests, "get", MagicMock(side_effect=failure))
     assert ics.ICSRepository(URL, name="Home", clock=clock).fetch_events(14, 10) == []
     assert "Home (calendar.example.test)" in caplog.text
-    assert URL not in caplog.text and "private-placeholder" not in caplog.text
+    if URL in caplog.text or "private-placeholder" in caplog.text:
+        pytest.fail("unsafe feed diagnostic", pytrace=False)
 
 
-def test_parse_errors_containing_feed_content_are_not_logged(inline, clock, monkeypatch, caplog):
+def test_parse_errors_containing_feed_content_are_not_logged(clock, monkeypatch, caplog):
     monkeypatch.setattr(ics.requests, "get", MagicMock(return_value=Response(clock, [ICS])))
     monkeypatch.setattr(ics, "events_from_ics", MagicMock(side_effect=ValueError(URL)))
     assert ics.ICSRepository(URL, clock=clock).fetch_events(14, 10) == []
-    assert URL not in caplog.text and "private-placeholder" not in caplog.text
+    if URL in caplog.text or "private-placeholder" in caplog.text:
+        pytest.fail("unsafe feed diagnostic", pytrace=False)
 
 
 def test_host_label_excludes_userinfo():
     assert ics.ICSRepository("https://placeholder:placeholder@calendar.example.test/a")._log_label == "feed (calendar.example.test)"
-
-
-def _blocked(limit):
-    threading.Event().wait(60)
-
-
-def _bytes(limit):
-    return b"ok"
-
-
-def test_worker_hard_cap_interrupts_a_read_that_never_yields():
-    import multiprocessing
-    import time
-    before = {p.pid for p in multiprocessing.active_children()}
-    started = time.monotonic()
-    with pytest.raises(fb.FetchTimeout):
-        fb.run_bounded(_blocked, (), fb.RequestLimit(seconds=0.3))
-    assert time.monotonic() - started < 3
-    assert {p.pid for p in multiprocessing.active_children()} == before
-
-
-def test_worker_can_return_bytes():
-    assert fb.run_bounded(_bytes, (), fb.RequestLimit(seconds=10)) == b"ok"
-
-
-def _http_error(limit):
-    import requests
-    response = requests.Response()
-    response.status_code = 403
-    raise requests.HTTPError(URL, response=response)
-
-
-def test_worker_preserves_status_without_transferring_url_text():
-    with pytest.raises(fb.FetchFailure) as error:
-        fb.run_bounded(_http_error, (), fb.RequestLimit(seconds=10))
-    assert error.value.status == 403
-    assert URL not in str(error.value)
-
-
-def test_worker_also_works_from_an_onboarding_thread():
-    from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        result = pool.submit(fb.run_bounded, _bytes, (), fb.RequestLimit(seconds=10))
-        assert result.result(timeout=12) == b"ok"
 
 
 def test_budget_absolute_deadline_cannot_move_during_request_creation():
@@ -216,7 +176,89 @@ def test_budget_absolute_deadline_cannot_move_during_request_creation():
         limit.remaining()
 
 
-def test_weather_exception_text_is_not_logged(inline, clock, monkeypatch, caplog):
+def test_weather_exception_text_is_not_logged(clock, monkeypatch, caplog):
     monkeypatch.setattr(meteo.urllib.request, "urlopen", MagicMock(side_effect=OSError(URL)))
     assert meteo.OpenMeteoRepository(0, 0, clock=clock).fetch_weather().condition == "N/A"
-    assert URL not in caplog.text
+    if URL in caplog.text:
+        pytest.fail("unsafe feed diagnostic", pytrace=False)
+
+
+def test_direct_fetch_raw_errors_have_safe_useful_messages(clock, monkeypatch):
+    monkeypatch.setattr(ics.requests, "get", MagicMock(side_effect=ics.requests.ReadTimeout(URL)))
+    with pytest.raises(fb.FetchFailure) as caught:
+        ics.ICSRepository(URL, clock=clock).fetch_raw()
+    message = str(caught.value)
+    if URL in message:
+        pytest.fail("fetch_raw exposed a feed URL", pytrace=False)
+    assert "timed out" in message and "40" in message
+
+
+def test_http_failure_is_url_free_and_preserves_onboarding_status(clock, monkeypatch):
+    response = Response(clock)
+    response.status_code = 404
+    monkeypatch.setattr(ics.requests, "get", MagicMock(return_value=response))
+    with pytest.raises(ics.requests.HTTPError) as caught:
+        ics.ICSRepository(URL, clock=clock).fetch_raw()
+    error = caught.value
+    if URL in str(error) or getattr(error.response, "url", None):
+        pytest.fail("HTTP failure exposed a feed URL", pytrace=False)
+    assert str(error) == "HTTP 404" and error.response.status_code == 404
+    assert error.__suppress_context__
+    assert response.closed
+
+
+def test_expired_request_does_not_start_http(clock, monkeypatch):
+    get = MagicMock()
+    monkeypatch.setattr(ics.requests, "get", get)
+    with pytest.raises(fb.FetchTimeout):
+        ics.ICSRepository(URL, timeout=0, clock=clock).fetch_raw()
+    get.assert_not_called()
+
+
+def test_stream_yields_bounded_chunks(clock, monkeypatch):
+    response = Response(clock, [ICS])
+    get = MagicMock(return_value=response)
+    monkeypatch.setattr(ics.requests, "get", get)
+    assert ics.ICSRepository(URL, clock=clock).fetch_raw() == ICS
+    get.assert_called_once()
+
+
+def test_refresh_deadline_is_armed_and_restored_without_sleep(clock, monkeypatch):
+    calls = []
+    handler = object()
+    monkeypatch.setattr(signal, "getsignal", lambda sig: handler)
+    monkeypatch.setattr(signal, "getitimer", lambda which: (0, 0))
+    monkeypatch.setattr(signal, "signal", lambda *args: calls.append(("handler", args)))
+    monkeypatch.setattr(signal, "setitimer", lambda *args: calls.append(("timer", args)))
+    limit = fb.RequestLimit(seconds=4, clock=clock)
+    with fb.request_scope(limit):
+        installed = next(args[1] for what, args in calls if what == "handler")
+        with pytest.raises(fb.FetchTimeout):
+            installed(None, None)
+    assert ("timer", (signal.ITIMER_REAL, 4)) in calls
+    assert calls[-1] == ("handler", (signal.SIGALRM, handler))
+    assert ("timer", (signal.ITIMER_REAL, 0)) in calls
+
+
+def test_dns_timeout_uses_only_daemon_thread_and_restores_resolver(clock, monkeypatch):
+    from types import SimpleNamespace
+    threads = []
+    class Event:
+        def wait(self, timeout):
+            clock.now += timeout
+            return False
+        def set(self):
+            pass
+    class Thread:
+        def __init__(self, **kwargs):
+            threads.append(kwargs)
+        def start(self):
+            pass  # unresolved DNS: fake time advances only in Event.wait
+    monkeypatch.setattr(fb, "dns_threading", SimpleNamespace(Event=Event, Thread=Thread))
+    resolver = socket.getaddrinfo
+    with fb.request_scope(fb.RequestLimit(seconds=4, clock=clock)):
+        with pytest.raises(fb.FetchTimeout):
+            socket.getaddrinfo("calendar.example.test", 443)
+    assert socket.getaddrinfo is resolver
+    assert len(threads) == 1 and threads[0]["daemon"] is True
+    assert clock.now == 4

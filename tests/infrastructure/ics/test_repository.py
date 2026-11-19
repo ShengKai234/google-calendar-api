@@ -215,15 +215,10 @@ def test_empty_calendar_yields_no_events():
 # --- failure handling ---
 
 
-@pytest.fixture(autouse=True)
-def inline_download(monkeypatch):
-    from gcal_epd.infrastructure import fetch_budget
-    monkeypatch.setattr(fetch_budget, "run_bounded", lambda fn, args, limit: fn(*args, limit))
-
-
 def _response(content: bytes = b"", status: int = 200):
     r = MagicMock()
     r.content = content
+    r.status_code = status
     r.iter_content.return_value = iter([content])
     r.raise_for_status = MagicMock()
     if status >= 400:
