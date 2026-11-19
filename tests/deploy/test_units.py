@@ -92,14 +92,28 @@ def test_refresh_never_shuts_down_on_its_own():
             assert "poweroff" not in text, unit.name
 
 
-def test_every_refresh_is_followed_by_an_update_check():
-    """No clock of its own: gcal-epd.service wants epd-update.service, so
-    each refresh queues a check that runs after it (After=)."""
+def test_every_refresh_checks_for_an_update_first():
+    """No clock of its own: gcal-epd.service wants epd-update.service, which
+    runs BEFORE it, so the panel is drawn by the newest release; Wants= (not
+    Requires=), so a failed or offline check still lets the refresh run."""
     refresh = (DEPLOY / "gcal-epd.service").read_text().split("[Service]", 1)[0]
     assert re.search(r"^Wants=.*\bepd-update\.service\b", refresh, re.M)
+    assert not re.search(r"^Requires=.*epd-update", refresh, re.M)
     update = (DEPLOY / "epd-update.service").read_text()
-    assert re.search(r"^After=.*\bgcal-epd\.service\b", update, re.M)
+    assert re.search(r"^Before=.*\bgcal-epd\.service\b", update, re.M)
+    assert not re.search(r"^After=.*\bgcal-epd\.service\b", update, re.M)
     assert not (DEPLOY / "epd-update.timer").exists()
+
+
+def test_update_check_runs_after_the_clock_and_setup():
+    """It now runs first: after the RTC sets the clock (TLS needs it) and
+    after Wi-Fi and calendar setup, never alongside them."""
+    power = (DEPLOY / "epd-power.service").read_text()
+    before = re.search(r"^Before=(.*)$", power, re.M).group(1).split()
+    assert "epd-update.service" in before
+    update = (DEPLOY / "epd-update.service").read_text()
+    after = " ".join(re.findall(r"^After=(.*)$", update, re.M)).split()
+    assert {"epd-wifi-setup.service", "epd-feed-setup.service"} <= set(after)
 
 
 def test_update_hook_lives_in_a_unit_file_every_installer_rewrites():

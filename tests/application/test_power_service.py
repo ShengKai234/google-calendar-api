@@ -378,23 +378,30 @@ def test_any_activity_probe_will_do(tmp_path):
 
 
 # --- updates -----------------------------------------------------------
-def test_update_check_after_a_refresh_keeps_it_on_until_done(tmp_path):
-    """06:55 wake, refresh ends 06:57: the update check it queued runs
-    next, and the Pi stays on until that ends, grace or not."""
+def test_update_check_then_refresh_keeps_it_on_until_done(tmp_path):
+    """06:55 wake: the update check runs first with the refresh queued
+    behind it; the Pi stays on through both, even in the instant between
+    them, and powers off after the refresh's grace."""
     rig = Rig(tmp_path, now=at(6, 57), uptime=120.0)
-    rig.system.units["gcal-epd.service"] = UnitState("inactive", 120.0)
+    # An earlier refresh this boot ended at 06:56; its grace is long over by 07:03.
+    rig.system.units["gcal-epd.service"] = UnitState("inactive", 60.0)
 
-    def off_at(when, update):
+    def off_at(when, update, refresh):
         rig.t, rig.mono = when, 120.0 + (when - at(6, 57)).total_seconds()
         rig.system.units["epd-update.service"] = update
+        rig.system.units["gcal-epd.service"] = refresh
         return decide(rig.manager.snapshot()).power_off
 
-    assert not off_at(at(6, 57), UnitState("inactive", None, queued=True))
-    # Still queued after the refresh's grace (review 50-2): only the job
-    # keeps it on now, e.g. while network-online.target is still pending.
-    assert not off_at(at(7, 3), UnitState("inactive", None, queued=True))
-    assert not off_at(at(7, 5), UnitState("activating", None))      # installing
-    assert off_at(at(7, 6), UnitState("inactive", 600.0))          # done: off
+    queued = UnitState("inactive", 60.0, queued=True)
+    assert not off_at(at(7, 3), UnitState("inactive", None, queued=True), queued)
+    assert not off_at(at(7, 5), UnitState("activating", None), queued)   # installing
+    # The check has ended, the refresh job has not started yet (review 50-2's
+    # window, now on the refresh side): a queued refresh keeps it on.
+    assert not off_at(at(7, 8), UnitState("inactive", 600.0), queued)
+    assert not off_at(at(7, 9), UnitState("inactive", 600.0), UnitState("activating", 60.0))
+    done = UnitState("inactive", 840.0)                                   # 07:09
+    assert not off_at(at(7, 10), UnitState("inactive", 600.0), done)     # grace
+    assert off_at(at(7, 12), UnitState("inactive", 600.0), done)
 
 
 def test_unknown_update_state_keeps_it_on(tmp_path):
