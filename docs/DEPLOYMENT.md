@@ -280,7 +280,7 @@ panel always shows the newest release (`gcal-epd.service` has
 runs whatever the check did: nothing new, updated, or failed (offline,
 say). Running `gcal_epd.main` yourself does not check.
 With nothing new the check takes a few seconds before the refresh; an
-update may run for up to 6 minutes (see [Time limits](#time-limits)), and
+update may run for up to 15 minutes (see [Time limits](#time-limits)), and
 the panel keeps the previous calendar until it is done. It has no clock of its own, so a Pi
 that was off or booted with a stale clock still checks at its next
 refresh. On a PiSugar battery the power manager stays on while the check
@@ -315,7 +315,7 @@ count: the power manager bounds that.
 
 | What | Limit | When it is reached |
 |---|---|---|
-| `epd-update.service`: check, download, verify, build, test render | 6 min | the Pi goes back to the release it was running (units included); counts as one failed try, and a release is given up after 3; leftovers are removed at the next check; the refresh still runs, with the old release |
+| `epd-update.service`: check, download, verify, build, test render | 15 min (7–12 min seen on a Pi Zero) | the Pi goes back to the release it was running (units included); counts as one failed try, and a release is given up after 3; leftovers are removed at the next check; the refresh still runs, with the old release |
 | `gcal-epd.service`: fetch calendars and weather, draw the panel | 3 min | stopped; the power manager powers off as after any refresh |
 | `epd-power.service` setup: clock from the RTC, schedule | 2 min | stopped; Wi-Fi setup and the refresh go on |
 | a refresh or update check waiting to start | 5 min after the last unit ended (or boot) | the power manager no longer stays on for it |

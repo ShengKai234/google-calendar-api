@@ -213,7 +213,7 @@ PiSugar 的套件用網址釘住（PiSugar 在 GitHub 的 release），`--refres
 
 ### 自動更新
 
-安裝成 release 的裝置會自己更新。`gcal-epd.service` 每一次刷新（早上、晚上、排程、開機，或用 `sudo systemctl start gcal-epd.service` 手動刷新都算），都會先執行 `epd-update.service`（`python3 -m gcal_epd.releases update`），再畫面板，所以面板永遠是最新版本畫的（`gcal-epd.service` 設定了 `Wants=epd-update.service`，而它的順序是 `Before=` 刷新）。不管檢查結果是沒有新版本、已更新，還是失敗（例如沒網路），刷新都照常執行。自己直接執行 `gcal_epd.main` 不會檢查更新。沒有新版本時，檢查只會讓刷新晚幾秒；更新最多可以跑 6 分鐘（見[時間限制](#時間限制)），期間面板維持上一次的日曆。它沒有自己的時間表，所以 Pi 就算關機過、或開機時時鐘還沒校正，下一次刷新還是會檢查。用 PiSugar 電池時，更新檢查或刷新正在執行時，電源管理都不會關機；在排隊等待時，最多從上一個工作結束起再等 5 分鐘，避免卡住的排隊把電池耗光。舊版每天 19:01 的 `epd-update.timer`，更新到這個版本時會被移除。步驟如下：
+安裝成 release 的裝置會自己更新。`gcal-epd.service` 每一次刷新（早上、晚上、排程、開機，或用 `sudo systemctl start gcal-epd.service` 手動刷新都算），都會先執行 `epd-update.service`（`python3 -m gcal_epd.releases update`），再畫面板，所以面板永遠是最新版本畫的（`gcal-epd.service` 設定了 `Wants=epd-update.service`，而它的順序是 `Before=` 刷新）。不管檢查結果是沒有新版本、已更新，還是失敗（例如沒網路），刷新都照常執行。自己直接執行 `gcal_epd.main` 不會檢查更新。沒有新版本時，檢查只會讓刷新晚幾秒；更新最多可以跑 15 分鐘（見[時間限制](#時間限制)），期間面板維持上一次的日曆。它沒有自己的時間表，所以 Pi 就算關機過、或開機時時鐘還沒校正，下一次刷新還是會檢查。用 PiSugar 電池時，更新檢查或刷新正在執行時，電源管理都不會關機；在排隊等待時，最多從上一個工作結束起再等 5 分鐘，避免卡住的排隊把電池耗光。舊版每天 19:01 的 `epd-update.timer`，更新到這個版本時會被移除。步驟如下：
 
 1. 列出 repo 在 GitHub 上的所有 release；
 2. 挑出符合裝置頻道、比目前版本新（絕不降版）、而且之前沒在這台失敗過的最新版本；
@@ -229,7 +229,7 @@ PiSugar 的套件用網址釘住（PiSugar 在 GitHub 的 release），`--refres
 
 | 項目 | 上限 | 時間到時 |
 |---|---|---|
-| `epd-update.service`：檢查、下載、驗證、建置、試畫 | 6 分鐘 | Pi 回到原本執行中的版本（包括 unit）；算一次失敗，同一版本失敗 3 次就放棄；殘留的檔案在下次檢查時清掉；刷新照常用舊版本執行 |
+| `epd-update.service`：檢查、下載、驗證、建置、試畫 | 15 分鐘（Pi Zero 上實測 7–12 分鐘） | Pi 回到原本執行中的版本（包括 unit）；算一次失敗，同一版本失敗 3 次就放棄；殘留的檔案在下次檢查時清掉；刷新照常用舊版本執行 |
 | `gcal-epd.service`：抓日曆與天氣、畫面板 | 3 分鐘 | 被停掉；電源管理照一般刷新後的流程關機 |
 | `epd-power.service` 的準備步驟：用 RTC 設定時鐘、排程 | 2 分鐘 | 被停掉；Wi-Fi 設定與刷新照常進行 |
 | 在佇列中等待開始的刷新或更新檢查 | 上一個 unit 結束（或開機）後 5 分鐘 | 電源管理不再為它保持開機 |

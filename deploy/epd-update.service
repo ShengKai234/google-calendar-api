@@ -25,7 +25,8 @@ ExecStart=/usr/bin/python3 -m gcal_epd.releases update
 # count; the power manager bounds that). At the limit systemd sends SIGTERM
 # to the whole control group (pip, the build): the updater switches back to
 # the release it was running and counts a failure, then the refresh runs.
-TimeoutStartSec=6min
+# Real updates on a Pi Zero took about 7 and 12 minutes.
+TimeoutStartSec=15min
 # Time to switch back and reinstall the old units before SIGKILL.
 TimeoutStopSec=90s
 Nice=10
