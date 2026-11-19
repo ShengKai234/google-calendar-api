@@ -9,6 +9,7 @@ client-side before being handed to the domain.
 import datetime
 import logging
 import time
+import threading
 from urllib.parse import urlsplit
 
 import icalendar
@@ -26,7 +27,7 @@ log = logging.getLogger(__name__)
 # what level the application selects.
 logging.getLogger("urllib3.connectionpool").setLevel(logging.INFO)
 
-DEFAULT_TIMEOUT = fetch_budget.REQUEST_TIMEOUT
+DEFAULT_REQUEST_TIMEOUT = fetch_budget.REQUEST_TIMEOUT
 _USER_AGENT = "gcal-epd/1.0"
 
 
@@ -81,6 +82,12 @@ def events_from_ics(
     return events[:max_results]
 
 
+def _http_error(status: int) -> requests.HTTPError:
+    response = requests.Response()
+    response.status_code = status
+    return requests.HTTPError(f"HTTP {status}", response=response)
+
+
 def _download(url: str, limit: fetch_budget.RequestLimit) -> bytes:
     response = requests.get(
         url, timeout=(limit.connect_timeout, limit.read_timeout),
@@ -88,9 +95,13 @@ def _download(url: str, limit: fetch_budget.RequestLimit) -> bytes:
     )
     try:
         limit.remaining()
-        response.raise_for_status()
+        if response.status_code >= 400:
+            raise _http_error(response.status_code) from None
         chunks = []
-        for chunk in response.iter_content(chunk_size=64 * 1024):
+        # The refresh has an interruptible main-thread deadline. Threaded
+        # validators check each byte rather than waiting for a buffer to fill.
+        chunk_size = 64 * 1024 if threading.current_thread() is threading.main_thread() else 1
+        for chunk in response.iter_content(chunk_size=chunk_size):
             limit.remaining()
             chunks.append(chunk)
         limit.remaining()
@@ -100,14 +111,18 @@ def _download(url: str, limit: fetch_budget.RequestLimit) -> bytes:
 
 
 class ICSRepository:
-    """Fetches one .ics feed. Satisfies the EventRepository protocol."""
+    """Fetches one .ics feed. Satisfies the EventRepository protocol.
 
-    def __init__(self, url: str, name: str = "", timeout: float = DEFAULT_TIMEOUT,
+    ``timeout`` is the whole-request deadline; connect/read limits are
+    independently capped at 10/30 seconds and the budget remaining.
+    """
+
+    def __init__(self, url: str, name: str = "", timeout: float = DEFAULT_REQUEST_TIMEOUT,
                  *, budget: fetch_budget.FetchBudget | None = None,
                  clock=time.monotonic) -> None:
         self._url = normalize_feed_url(url)
         self._name = name
-        self._timeout = timeout
+        self._request_timeout = timeout
         self._budget = budget
         self._clock = clock
 
@@ -118,7 +133,10 @@ class ICSRepository:
         The feed URL embeds a private token and these logs land in the
         systemd journal, so a feed is only ever identified by name and host.
         """
-        host = urlsplit(self._url).hostname or "unknown host"
+        try:
+            host = urlsplit(self._url).hostname or "unknown host"
+        except ValueError:
+            host = "unknown host"
         return f"{self._name or 'feed'} ({host})"
 
     def fetch_raw(self) -> bytes:
@@ -130,16 +148,28 @@ class ICSRepository:
         this instead, because "no events" and "unreachable" are different
         answers and an empty calendar is perfectly legitimate.
         """
-        limit = (self._budget.request(self._timeout) if self._budget is not None
-                 else fetch_budget.RequestLimit(self._timeout, self._clock))
+        limit = (self._budget.request(self._request_timeout) if self._budget is not None
+                 else fetch_budget.RequestLimit(self._request_timeout, self._clock))
         try:
-            return fetch_budget.run_bounded(_download, (self._url,), limit)
-        except fetch_budget.FetchFailure as error:
-            if error.status is not None:
-                response = requests.Response()
-                response.status_code = error.status
-                raise requests.HTTPError(f"HTTP {error.status}", response=response) from None
+            with fetch_budget.request_scope(limit):
+                return _download(self._url, limit)
+        except fetch_budget.FetchTimeout:
             raise
+        except requests.HTTPError as error:
+            status = getattr(error.response, "status_code", None)
+            if status is not None:
+                raise _http_error(status) from None
+            raise fetch_budget.FetchFailure("HTTP request failed") from None
+        except (requests.Timeout, TimeoutError):
+            raise fetch_budget.FetchFailure(
+                f"timed out (request limit {limit.seconds:g} s)") from None
+        except fetch_budget.FetchFailure:
+            raise
+        except Exception:
+            # urllib3 may wrap a deadline interrupt as a connection error.
+            # Preserve the timeout reason without exposing its URL-bearing text.
+            limit.remaining()
+            raise fetch_budget.FetchFailure("calendar download failed") from None
 
     def fetch_events(self, days_ahead: int, max_results: int) -> list[CalendarEvent]:
         try:
@@ -148,7 +178,7 @@ class ICSRepository:
             log.warning("Skipping %s: refresh fetch budget exhausted", self._log_label)
             return []
         except Exception as e:
-            log.warning("Could not reach %s (%s)", self._log_label, type(e).__name__)
+            log.warning("Could not reach %s: %s", self._log_label, e)
             return []
 
         try:

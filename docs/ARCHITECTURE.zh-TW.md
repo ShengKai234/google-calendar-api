@@ -120,7 +120,7 @@ flowchart TB
   BOOT --> TIMER
   W -->|"start_units()<br/>systemctl start --no-block"| COND{"日曆檔存在，<br/>且沒有待檢查網址？"}
   COND -->|"否"| F["epd-feed-setup.service<br/>一般使用者 · 900 秒<br/>main --display"]
-  COND -->|"是"| G["gcal-epd.service<br/>一般使用者 · 3 分鐘<br/>main --display --no-setup"]
+  COND -->|"是"| G["gcal-epd.service<br/>一般使用者 · 120 秒<br/>main --display --no-setup"]
   TIMER(["gcal-epd.timer<br/>07:00 / 19:00 Asia/Taipei<br/>開機時補跑錯過的排程"]) --> G
   F -->|"網址正常 / 已存好"| PANEL[["面板：日曆"]]
   F -->|"有網址失敗"| ERRQ[["面板：設定 QR + 原因"]]
@@ -135,12 +135,12 @@ flowchart TB
 |---|---|---|---|---|
 | `epd-wifi-setup.service` | `wifi_setup.main()` | root | 無 | 每次開機（已啟用） |
 | `epd-feed-setup.service` | `main.main()` | 程式擁有者 | 900 秒 | Wi‑Fi 設定後，沒有日曆檔或有待檢查的網址時 |
-| `gcal-epd.service` | `main.main() --no-setup` | 程式擁有者 | 3 分鐘 | 其他情況下 Wi‑Fi 設定後；排程觸發；開機補跑 |
+| `gcal-epd.service` | `main.main() --no-setup` | 程式擁有者 | 120 秒 | 其他情況下 Wi‑Fi 設定後；排程觸發；開機補跑 |
 | `gcal-epd.timer` | 啟動 `gcal-epd.service` | — | — | Asia/Taipei 07:00、19:00 |
 
 - **需要 root 的原因只有兩個**：`nmcli` 要修改網路設定，Wi‑Fi 表單要聽 port 80。和日曆相關的程式都以程式擁有者的身分執行。
 - **Wi‑Fi 設定加了 `DefaultDependencies=no`**：熱點在等人操作時，其他開機流程（包括 SSH）照常進行。
-- **`--no-setup`** 讓定時更新永遠不會停下來等表單，所以 3 分鐘的上限不會被等待表單耗盡。
+- **`--no-setup`** 讓定時更新永遠不會停下來等表單，所以 120 秒的上限一定夠用。
 
 ---
 

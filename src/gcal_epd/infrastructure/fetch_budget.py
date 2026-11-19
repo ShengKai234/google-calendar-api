@@ -1,12 +1,16 @@
 """Shared monotonic fetch deadlines, independent of either HTTP library.
 
-Socket read timeouts reset after each read. Even a streaming read can wait
-forever for a chunk to fill, so an isolated, killable worker supplies the
-hard wall-clock bound. No worker or network operation starts once the shared
-refresh budget is exhausted. Spawn also works from the onboarding thread;
-no signals, inherited thread locks, or global socket defaults are needed.
+HTTP runs in the caller, with finite socket timeouts and streaming checks.
+A scoped POSIX alarm protects the refresh main thread even while a library
+buffers a chunk or reads headers. Only DNS (which has no socket timeout)
+runs in a daemon thread; an unresolved lookup cannot delay interpreter exit.
+Threaded onboarding keeps the same socket limits and per-chunk checks.
 """
-import multiprocessing
+from contextlib import contextmanager
+import signal
+import socket
+import threading
+import threading as dns_threading
 import time
 from typing import Callable
 
@@ -25,10 +29,7 @@ class BudgetSpent(FetchTimeout):
 
 
 class FetchFailure(Exception):
-    """Safe transport failure: never transfer exception text containing URLs."""
-    def __init__(self, kind: str, status: int | None = None):
-        super().__init__(kind)
-        self.status = status
+    """A short, URL-free explanation suitable for logs and onboarding."""
 
 
 class RequestLimit:
@@ -36,12 +37,14 @@ class RequestLimit:
                  clock: Callable[[], float] = time.monotonic,
                  deadline: float = float("inf")):
         self._clock = clock
-        self._end = min(clock() + seconds, deadline)
+        now = clock()
+        self.seconds = min(seconds, deadline - now)
+        self._end = min(now + seconds, deadline)
 
     def remaining(self) -> float:
         left = self._end - self._clock()
         if left <= 0:
-            raise FetchTimeout("request deadline reached")
+            raise FetchTimeout(f"timed out after {self.seconds:g} s") from None
         return left
 
     @property
@@ -62,56 +65,107 @@ class FetchBudget:
     def request(self, seconds: float = REQUEST_TIMEOUT) -> RequestLimit:
         left = self._end - self._clock()
         if left <= 0:
-            raise BudgetSpent("refresh fetch budget exhausted")
+            raise BudgetSpent("refresh fetch budget exhausted") from None
         return RequestLimit(seconds, clock=self._clock, deadline=self._end)
 
 
-def _worker(pipe, operation, args, limit):
-    try:
+_dns_state = threading.local()
+_dns_lock = threading.Lock()
+_dns_users = 0
+_resolver = socket.getaddrinfo
+
+
+def _resolve(*args, **kwargs):
+    limit = getattr(_dns_state, "limit", None)
+    resolver = _resolver
+    if limit is None:
+        return resolver(*args, **kwargs)
+    done = dns_threading.Event()
+    result = []
+
+    def lookup():
         try:
-            result = (True, operation(*args, limit))
-        except Exception as error:
-            # HTTP status is useful for onboarding; error strings and response
-            # bodies can contain feed tokens and never cross this boundary.
-            status = getattr(getattr(error, "response", None), "status_code", None)
-            result = (False, type(error).__name__, status)
-        pipe.send(result)
+            result.append(resolver(*args, **kwargs))
+        except Exception:
+            result.append(None)  # resolver errors can include private input
+        finally:
+            done.set()
+
+    wait = limit.connect_timeout
+    dns_threading.Thread(target=lookup, name="fetch-dns", daemon=True).start()
+    if not done.wait(wait):
+        raise FetchTimeout(f"DNS lookup timed out after {wait:g} s") from None
+    limit.remaining()
+    if not result or result[0] is None:
+        raise FetchFailure("DNS lookup failed") from None
+    return result[0]
+
+
+@contextmanager
+def _dns_scope(limit):
+    # The dispatcher uses thread-local deadlines; unrelated HTTP/server
+    # threads retain normal resolver behavior. Concurrent fetch scopes share
+    # the hook and the last one restores it, including on exceptions.
+    global _dns_users, _resolver
+    previous = getattr(_dns_state, "limit", None)
+    with _dns_lock:
+        if not _dns_users:
+            _resolver = socket.getaddrinfo
+            socket.getaddrinfo = _resolve
+        _dns_users += 1
+    _dns_state.limit = limit
+    try:
+        yield
     finally:
-        pipe.close()
+        _dns_state.limit = previous
+        with _dns_lock:
+            _dns_users -= 1
+            if not _dns_users and socket.getaddrinfo is _resolve:
+                socket.getaddrinfo = _resolver
 
 
-def run_bounded(operation, args: tuple, limit: RequestLimit) -> bytes:
-    """Run one download within its total deadline, then reap its worker.
+@contextmanager
+def _alarm_scope(limit):
+    main = threading.current_thread() is threading.main_thread()
+    if not main or not hasattr(signal, "setitimer"):
+        yield
+        return
+    old_handler = signal.getsignal(signal.SIGALRM)
+    old_timer = signal.getitimer(signal.ITIMER_REAL)
+    started = limit._clock()
+    left = limit.remaining()
+    if old_timer[0] > 0:
+        left = min(left, old_timer[0])
 
-    The deadline includes process startup, DNS, redirects, headers, and body.
-    Parent-side poll prevents a blocked read inside either library from
-    consuming the rest of the refresh. The worker streams and checks the
-    same absolute monotonic deadline as well.
+    def expired(*args):
+        raise FetchTimeout(f"timed out after {limit.seconds:g} s") from None
+
+    try:
+        signal.signal(signal.SIGALRM, expired)
+        signal.setitimer(signal.ITIMER_REAL, left)
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old_handler)
+        if old_timer[0] > 0:
+            remaining = max(0.000001, old_timer[0] - (limit._clock() - started))
+            signal.setitimer(signal.ITIMER_REAL, remaining, old_timer[1])
+
+
+@contextmanager
+def request_scope(limit: RequestLimit):
+    """Protect a direct HTTP call without starting a download worker.
+
+    The refresh runs on the main thread, where SIGALRM can interrupt a
+    buffered read (per-chunk checks alone cannot do that). In a threaded
+    validation caller, socket timeouts and streaming checks still apply.
+    DNS alone needs a daemon thread because getaddrinfo has no timeout.
     """
     limit.remaining()
-    context = multiprocessing.get_context("spawn")
-    receiver, sender = context.Pipe(duplex=False)
-    worker = context.Process(target=_worker, args=(sender, operation, args, limit),
-                             daemon=True)
-    try:
-        worker.start()
-        sender.close()
-        if not receiver.poll(limit.remaining()):
-            raise FetchTimeout("request deadline reached")
-        result = receiver.recv()
-        limit.remaining()
-        if result[0]:
-            return result[1]
-        if result[1] == "FetchTimeout":
-            raise FetchTimeout("request deadline reached")
-        raise FetchFailure(result[1], result[2])
-    except EOFError:
-        raise FetchFailure("download worker exited") from None
-    finally:
-        receiver.close()
-        sender.close()
-        if worker.pid is not None:
-            if worker.is_alive():
-                worker.kill()
-            worker.join()
-        worker.close()
+    # Install/remove the DNS hook outside our alarm's lifetime, so a deadline
+    # cannot interrupt the resolver reference-count update halfway through.
+    with _dns_scope(limit):
+        with _alarm_scope(limit):
+            limit.remaining()
+            yield
+            limit.remaining()

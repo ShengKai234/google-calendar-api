@@ -41,14 +41,12 @@ def _current_precipitation_probability(data: dict) -> int:
 def _download(url: str, limit: fetch_budget.RequestLimit) -> bytes:
     with urllib.request.urlopen(url, timeout=limit.connect_timeout) as resp:
         limit.remaining()
-        # urllib exposes one timeout for opening the connection. Its body is
-        # http.client.HTTPResponse; change that connection's socket timeout
-        # once headers have arrived, without changing global socket defaults.
-        resp.fp.raw._sock.settimeout(limit.read_timeout)
+        # read1 makes at most one underlying read, rather than waiting to
+        # fill a large buffer. urlopen's timeout also bounds each body read.
         chunks = []
         while True:
             limit.remaining()
-            chunk = resp.read(64 * 1024)
+            chunk = resp.read1(64 * 1024)
             limit.remaining()
             if not chunk:
                 return b"".join(chunks)
@@ -79,7 +77,8 @@ class OpenMeteoRepository:
         try:
             limit = (self._budget.request() if self._budget is not None
                      else fetch_budget.RequestLimit(clock=self._clock))
-            data = json.loads(fetch_budget.run_bounded(_download, (url,), limit))
+            with fetch_budget.request_scope(limit):
+                data = json.loads(_download(url, limit))
             current = data["current"]
             code = current.get("weather_code", 0)
             return WeatherInfo(

@@ -19,8 +19,8 @@ ExecStart=@PROJECT_DIR@/.venv/bin/python -m gcal_epd.main --display --no-setup
 # No shutdown here: on a PiSugar battery, epd-power.service powers off
 # after the refresh, once it has set the next wake-up alarm.
 
-# Fetching shares 90 seconds; leave the rest for rendering and the panel.
-TimeoutStartSec=3min
+# Kill if taking longer than 120 seconds
+TimeoutStartSec=120
 
 # Do not retry on failure (timer will run again at next scheduled time)
 Restart=no

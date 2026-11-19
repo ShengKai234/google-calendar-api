@@ -7,8 +7,6 @@ release, publishing it, preparing a new SD card, and installing a release
 on a running display. Written to be followed step by step, by a person or
 by an AI agent working in this repository.
 
-Calendar and weather fetches share a 90-second refresh budget (per request: 10-second connect, 30-second read, 40-second total including the body), leaving time to draw within the refresh service’s 3-minute limit.
-
 ---
 
 ## The pieces
@@ -123,6 +121,11 @@ After the reboot the panel shows the Wi-Fi setup QR code (or the calendar
 setup screen, if Wi-Fi was set in Imager). From there, follow the panel; see
 [Wi-Fi setup](../README.md#wi-fi-setup) and
 [Calendar feeds](../README.md#calendar-feeds).
+
+Each calendar refresh shares a 90-second fetch budget across feeds and
+weather: at most 10 seconds to connect, 30 seconds per read, and a
+40-second request deadline including the body. Exhausted sources are
+skipped so the panel can draw the results already fetched.
 
 ### 4. If the panel stays blank
 
