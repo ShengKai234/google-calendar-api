@@ -48,6 +48,19 @@ def parse_properties(text: str) -> dict[str, str]:
     return props
 
 
+USEC_INFINITY = 2**64 - 1
+
+
+def unit_object_path(unit: str) -> str:
+    """A unit's D-Bus object path, escaped as systemd does (sd_bus_path_encode):
+    every byte but [A-Za-z0-9] becomes _xx, as does a leading digit."""
+    label = "".join(
+        chr(b) if (chr(b).isascii() and chr(b).isalnum() and not (i == 0 and chr(b).isdigit()))
+        else f"_{b:02x}"
+        for i, b in enumerate(unit.encode()))
+    return f"/org/freedesktop/systemd1/unit/{label or '_'}"
+
+
 class System:
     def __init__(self, run: Runner = _run, proc: Path = Path("/proc")) -> None:
         self._run = run
@@ -81,16 +94,25 @@ class System:
 
     def timer_next(self, unit: str) -> float | None:
         """When `unit` (a timer) next fires, in Unix seconds; None if it is not
-        scheduled, not installed, or systemctl cannot tell."""
-        out = self._cmd("systemctl", "show", unit, "--timestamp=unix",
-                        "-p", "NextElapseUSecRealtime")
+        scheduled, not installed, or systemd cannot tell.
+
+        Asked over D-Bus, which answers in microseconds: `systemctl show`
+        prints this property as a date in the local format whatever
+        --timestamp says (systemd 257), so it cannot be parsed (issue #48).
+        """
+        out = self._cmd("busctl", "get-property", "org.freedesktop.systemd1",
+                        unit_object_path(unit), "org.freedesktop.systemd1.Timer",
+                        "NextElapseUSecRealtime")
         if out is None:
             return None
-        value = parse_properties(out).get("NextElapseUSecRealtime", "")
-        try:
-            return float(value[1:]) if value.startswith("@") else None
-        except ValueError:
+        kind, _, value = out.strip().partition(" ")
+        if kind != "t" or not value.isdigit():
             return None
+        usec = int(value)
+        # 0: never; UINT64_MAX (infinity): not loaded, or its service is running.
+        if usec == 0 or usec >= USEC_INFINITY:
+            return None
+        return usec / 1e6
 
     # --- clock ------------------------------------------------------
     def ntp_synchronized(self) -> bool | None:
