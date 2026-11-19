@@ -12,6 +12,9 @@ Before=gcal-epd.service
 # gcal-epd.service has the opposite conditions, so exactly one runs.
 ConditionPathExists=|!@FEEDS_FILE@
 ConditionPathExists=|@PENDING_FILE@
+# The whole job, queued and running (15 min to run): a job left in the
+# queue would keep a battery Pi on.
+JobTimeoutSec=30min
 
 [Service]
 Type=oneshot
