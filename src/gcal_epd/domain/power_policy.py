@@ -20,6 +20,8 @@ MIN_OFF = 180          # never power off for a wake-up closer than this: shutdow
                        # takes ~30 s on a Zero, and a missed alarm waits a day
 UPDATE_WAIT = 600      # stay on for an update check due this soon (the evening
                        # one is a minute after its slot: see timer_dropin.py)
+UPDATE_LATE = 120      # ...and this long after it was due: systemd may start a
+                       # timer up to AccuracySec late, reporting the passed time
 
 
 def _hm(when: datetime) -> str:
@@ -76,7 +78,8 @@ def decide(s: Snapshot) -> Decision:
     if s.updating:
         return Decision(False, f"{s.updating} is installing an update")
     if s.update_due is not None and \
-            timedelta(0) <= s.update_due - s.now <= timedelta(seconds=UPDATE_WAIT):
+            -timedelta(seconds=UPDATE_LATE) <= s.update_due - s.now \
+            <= timedelta(seconds=UPDATE_WAIT):
         return Decision(False, f"an update check is due at {_hm(s.update_due)}")
 
     schedule, now = s.schedule, s.now

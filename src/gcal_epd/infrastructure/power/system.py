@@ -32,6 +32,9 @@ class UnitState:
     # CLOCK_MONOTONIC seconds when the main process last exited; None if it
     # never ran this boot (also when a Condition= skipped it).
     last_exit: float | None
+    # A job is pending: e.g. a timer fired and the start job waits for the
+    # units it is ordered After=, while the unit is still "inactive".
+    queued: bool = False
 
     @property
     def busy(self) -> bool:
@@ -81,7 +84,7 @@ class System:
     # --- systemd units ----------------------------------------------
     def unit_state(self, unit: str) -> UnitState | None:
         out = self._cmd("systemctl", "show", unit, "-p", "ActiveState",
-                        "-p", "ExecMainExitTimestampMonotonic")
+                        "-p", "ExecMainExitTimestampMonotonic", "-p", "Job")
         if out is None:
             return None
         props = parse_properties(out)
@@ -89,8 +92,10 @@ class System:
             exit_us = int(props.get("ExecMainExitTimestampMonotonic", "0") or 0)
         except ValueError:
             exit_us = 0
+        job = props.get("Job", "")
         return UnitState(props.get("ActiveState", "unknown"),
-                         exit_us / 1e6 if exit_us else None)
+                         exit_us / 1e6 if exit_us else None,
+                         queued=job.isdigit() and job != "0")
 
     def timer_next(self, unit: str) -> float | None:
         """When `unit` (a timer) next fires, in Unix seconds; None if it is not

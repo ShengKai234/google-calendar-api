@@ -52,8 +52,11 @@ class SystemdActivity:
         # Over-the-air updates (installed releases only; elsewhere the timer
         # is not installed and has no next time).
         state = self.system.unit_state(UPDATE_UNIT)
+        # A start job waiting in the queue counts: once the timer has fired,
+        # it reports no next time until the service has run (issue #48).
         updating = (f"{UPDATE_UNIT} (state unknown)" if state is None
-                    else UPDATE_UNIT if state.busy else "")
+                    else UPDATE_UNIT if state.busy
+                    else f"{UPDATE_UNIT} (queued)" if state.queued else "")
         proc_setup, proc_refresh = classify_processes(self.system.command_lines())
         return Activity(setup=setup or proc_setup,
                         refreshing=refreshing or proc_refresh,
