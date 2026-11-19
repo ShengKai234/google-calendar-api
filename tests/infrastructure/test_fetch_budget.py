@@ -256,9 +256,69 @@ def test_dns_timeout_uses_only_daemon_thread_and_restores_resolver(clock, monkey
             pass  # unresolved DNS: fake time advances only in Event.wait
     monkeypatch.setattr(fb, "dns_threading", SimpleNamespace(Event=Event, Thread=Thread))
     resolver = socket.getaddrinfo
-    with fb.request_scope(fb.RequestLimit(seconds=4, clock=clock)):
-        with pytest.raises(fb.FetchTimeout):
+    with pytest.raises(fb.FetchTimeout):
+        with fb.request_scope(fb.RequestLimit(seconds=4, clock=clock)):
             socket.getaddrinfo("calendar.example.test", 443)
     assert socket.getaddrinfo is resolver
     assert len(threads) == 1 and threads[0]["daemon"] is True
     assert clock.now == 4
+
+
+@pytest.mark.parametrize("fails", [False, True], ids=["resolved", "safe-error"])
+def test_dns_success_and_error_use_the_real_scoped_path(clock, monkeypatch, fails):
+    from types import SimpleNamespace
+    threads = []
+    class Event:
+        done = False
+        def set(self):
+            self.done = True
+        def wait(self, timeout):
+            return self.done
+    class Thread:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            threads.append(kwargs)
+        def start(self):
+            self.kwargs["target"]()
+    expected = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))]
+    def resolver(*args, **kwargs):
+        clock.now += 1
+        if fails:
+            raise OSError(URL)
+        return expected
+    monkeypatch.setattr(socket, "getaddrinfo", resolver)
+    monkeypatch.setattr(fb, "dns_threading", SimpleNamespace(Event=Event, Thread=Thread))
+    with fb.request_scope(fb.RequestLimit(clock=clock)):
+        if fails:
+            with pytest.raises(fb.FetchFailure, match="^DNS lookup failed$"):
+                socket.getaddrinfo("calendar.example.test", 443)
+        else:
+            result = socket.getaddrinfo("calendar.example.test", 443)
+            assert result == expected
+    assert socket.getaddrinfo is resolver and threads[0]["daemon"]
+
+
+def test_threaded_validation_does_not_install_a_process_alarm(clock, monkeypatch):
+    from types import SimpleNamespace
+    current, main = object(), object()
+    monkeypatch.setattr(fb, "threading", SimpleNamespace(current_thread=lambda: current,
+                                                        main_thread=lambda: main))
+    timer = MagicMock()
+    monkeypatch.setattr(signal, "setitimer", timer)
+    with fb.request_scope(fb.RequestLimit(clock=clock)):
+        pass
+    timer.assert_not_called()
+
+
+def test_expired_wrapped_network_error_suppresses_unsafe_exception_chain(clock, monkeypatch):
+    import traceback
+    def fail(*args, **kwargs):
+        clock.now = 41
+        raise ics.requests.ConnectionError(URL)
+    monkeypatch.setattr(ics.requests, "get", fail)
+    with pytest.raises(fb.FetchTimeout) as caught:
+        ics.ICSRepository(URL, clock=clock).fetch_raw()
+    rendered = "".join(traceback.format_exception(caught.type, caught.value, caught.tb))
+    if URL in rendered:
+        pytest.fail("timeout traceback exposed the original request URL", pytrace=False)
+    assert caught.value.__suppress_context__
