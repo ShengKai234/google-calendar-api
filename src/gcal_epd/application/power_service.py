@@ -79,9 +79,9 @@ class PowerService:
             ssh_sessions=busy.ssh_sessions,
             last_refresh=last_refresh,
             updating=busy.updating,
-            update_due=(None if busy.update_next is None else
-                        datetime.fromtimestamp(busy.update_next, timezone.utc)
-                        .astimezone(self.tz)),
+            queued=busy.queued,
+            last_activity=(None if busy.last_activity_end is None
+                           else wall(busy.last_activity_end)),
         )
 
     def wait_for_board(self) -> bool:

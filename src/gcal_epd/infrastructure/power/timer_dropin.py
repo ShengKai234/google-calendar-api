@@ -16,15 +16,13 @@ The empty OnCalendar= first clears the unit's own lines (systemd.timer(5):
 "If the empty string is assigned to any of these options, the list of
 timers is reset").
 
-epd-update.timer (installed releases) gets a drop-in too: one update check
-a day, a minute after the LAST slot, so it follows that slot's refresh and
-the Pi is awake anyway. Never at another slot (the morning one is for
-reading the calendar, not for a five-minute build), and a check missed
-while the Pi was off is not made up at the next boot.
+The update check has no timer: epd-update.service runs before each refresh
+(deploy/epd-update.service). Earlier releases had an epd-update.timer with
+a drop-in written here; apply-schedule removes that leftover drop-in.
 """
 import logging
 import os
-from datetime import datetime, time, timedelta
+import shutil
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -34,31 +32,17 @@ log = logging.getLogger(__name__)
 
 TIMER_UNIT = "gcal-epd.timer"
 DROPIN = Path("/etc/systemd/system") / f"{TIMER_UNIT}.d" / "power-schedule.conf"
-UPDATE_TIMER = "epd-update.timer"
-UPDATE_DROPIN = Path("/etc/systemd/system") / f"{UPDATE_TIMER}.d" / "power-schedule.conf"
-UPDATE_AFTER = timedelta(minutes=1)   # epd-update.service also waits for the refresh
+# Left by earlier releases, which checked for updates from a timer.
+OLD_UPDATE_DROPIN = Path("/etc/systemd/system/epd-update.timer.d/power-schedule.conf")
 _HEADER = [
     "# Written by `python -m gcal_epd.power_manager apply-schedule` from the",
     "# power schedule (setup form). Edits here are overwritten.",
 ]
 
 
-def update_time(schedule: PowerSchedule) -> time:
-    """When the daily update check runs: just after the last slot."""
-    last = datetime.combine(datetime.min.date(), schedule.slots[-1]) + UPDATE_AFTER
-    return last.time()
-
-
 def render_dropin(schedule: PowerSchedule, tz: ZoneInfo) -> str:
     lines = _HEADER + ["[Timer]", "OnCalendar="]
     lines += [f"OnCalendar=*-*-* {format_slot(s)}:00 {tz.key}" for s in schedule.slots]
-    return "\n".join(lines) + "\n"
-
-
-def render_update_dropin(schedule: PowerSchedule, tz: ZoneInfo) -> str:
-    lines = _HEADER + ["[Timer]", "OnCalendar=",
-                       f"OnCalendar=*-*-* {format_slot(update_time(schedule))}:00 {tz.key}",
-                       "RandomizedDelaySec=0", "AccuracySec=1s", "Persistent=false"]
     return "\n".join(lines) + "\n"
 
 
@@ -79,22 +63,27 @@ def write_dropin(schedule: PowerSchedule, tz: ZoneInfo, path: Path = DROPIN,
     return True
 
 
+def remove_old_update_dropin(path: Path = OLD_UPDATE_DROPIN) -> bool:
+    """Delete epd-update.timer's drop-in (and its folder); True if it existed."""
+    if not path.exists():
+        return False
+    shutil.rmtree(path.parent, ignore_errors=True)
+    log.info("Removed %s: the update check runs before each refresh now.", path)
+    return True
+
+
 def apply_schedule(schedule: PowerSchedule, tz: ZoneInfo, system,
-                   path: Path = DROPIN, update_path: Path = UPDATE_DROPIN) -> bool:
-    """Point gcal-epd.timer at the schedule's slots and epd-update.timer just
-    after the last one; True if that changed either."""
+                   path: Path = DROPIN, old_update_path: Path = OLD_UPDATE_DROPIN) -> bool:
+    """Point gcal-epd.timer at the schedule's slots (and drop the old update
+    timer's drop-in); True if that changed anything."""
     refresh = write_dropin(schedule, tz, path)
-    update = write_dropin(schedule, tz, update_path, render_update_dropin)
-    if not (refresh or update):
-        log.info("%s and %s already follow the schedule.", TIMER_UNIT, UPDATE_TIMER)
+    leftover = remove_old_update_dropin(old_update_path)
+    if not (refresh or leftover):
+        log.info("%s already follows the schedule.", TIMER_UNIT)
         return False
     system.daemon_reload()
     if refresh:
         system.try_restart(TIMER_UNIT)
         log.info("%s now fires at %s (%s).", TIMER_UNIT,
                  ", ".join(format_slot(s) for s in schedule.slots), tz.key)
-    if update:
-        system.try_restart(UPDATE_TIMER)   # stopped (not installed): left alone
-        log.info("%s now fires at %s (%s).", UPDATE_TIMER,
-                 format_slot(update_time(schedule)), tz.key)
     return True

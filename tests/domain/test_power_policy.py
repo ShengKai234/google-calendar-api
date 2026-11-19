@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from gcal_epd.domain import power_policy
 from gcal_epd.domain.power_policy import GRACE, MIN_OFF, Snapshot, decide
 from gcal_epd.domain.power_schedule import PowerSchedule
 
@@ -53,7 +54,7 @@ def test_waits_for_a_refresh_that_has_not_finished():
     ({"refreshing": "gcal-epd.service"}, "gcal-epd.service is running"),
     ({"refreshing": "epd-feed-setup.service"}, "epd-feed-setup.service is running"),
     ({"updating": "epd-update.service"}, "installing an update"),
-    ({"update_due": at(7, 5)}, "update check is due at 07:05"),
+    ({"updating": "epd-update.service (queued)"}, "installing an update"),
 ])
 def test_never_powers_off_when(change, words):
     ready = snap()
@@ -140,22 +141,28 @@ def test_zero_lead():
 
 
 # --- decide: updates ----------------------------------------------------
-def test_an_update_check_far_off_or_long_past_does_not_keep_it_on():
-    assert decide(snap(update_due=at(19, 1))).power_off
-    assert decide(snap(update_due=at(6, 56))).power_off
+def test_a_queued_job_keeps_it_on_while_things_move():
+    # The refresh waits for the update check, the check for the network:
+    # a start job in the queue is about to run.
+    d = decide(snap(queued="epd-update.service", last_activity=at(6, 57)))
+    assert not d.power_off and "epd-update.service" in d.reason and "queued" in d.reason
 
 
-def test_an_update_check_just_overdue_keeps_it_on():
-    # systemd may start a timer up to AccuracySec after its time; until it
-    # does, the timer still reports the passed time (review 48-2).
-    d = decide(snap(now=at(19, 1, 10, day=19), boot=at(18, 55), refreshed=at(18, 57),
-                    update_due=at(19, 1)))
-    assert not d.power_off and "19:01" in d.reason
+def test_a_stuck_queue_does_not_keep_it_on():
+    """Review 50-4: a job queued behind something that never comes (say, a
+    network) holds only QUEUE_WAIT past the last thing that finished."""
+    last = at(6, 57)
+    late = last + timedelta(seconds=power_policy.QUEUE_WAIT + 1)
+    assert decide(snap(now=late, queued="gcal-epd.service", last_activity=last)).power_off
+    assert not decide(snap(now=late - timedelta(seconds=2), queued="gcal-epd.service",
+                           last_activity=last)).power_off
 
 
-def test_a_queued_update_keeps_it_on():
-    d = decide(snap(updating="epd-update.service (queued)"))
-    assert not d.power_off and "epd-update.service (queued)" in d.reason
+def test_a_stuck_queue_counts_from_boot_without_activity():
+    boot = at(6, 55)
+    d = decide(snap(now=boot + timedelta(seconds=power_policy.QUEUE_WAIT - 1), boot=boot,
+                    refreshed=None, queued="gcal-epd.service"))
+    assert not d.power_off and "queued" in d.reason
 
 
 def test_an_update_beats_the_awake_cap():

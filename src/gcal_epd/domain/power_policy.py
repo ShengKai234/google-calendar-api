@@ -18,10 +18,9 @@ GRACE = 120            # seconds to stay up after the refresh, for a quick SSH c
 AWAKE_CAP = 900        # give up on a refresh this long after waking, to save battery
 MIN_OFF = 180          # never power off for a wake-up closer than this: shutdown
                        # takes ~30 s on a Zero, and a missed alarm waits a day
-UPDATE_WAIT = 600      # stay on for an update check due this soon (the evening
-                       # one is a minute after its slot: see timer_dropin.py)
-UPDATE_LATE = 120      # ...and this long after it was due: systemd may start a
-                       # timer up to AccuracySec late, reporting the passed time
+QUEUE_WAIT = 300       # a job waiting to start (a refresh behind the update
+                       # check, a check behind the network) holds the Pi on this
+                       # long after the last unit ended, or boot: then it is stuck
 
 
 def _hm(when: datetime) -> str:
@@ -40,8 +39,9 @@ class Snapshot:
     refreshing: str = ""          # a refresh that is running, "" if none
     ssh_sessions: int | None = 0  # None: cannot tell
     last_refresh: datetime | None = None  # when a refresh last finished
-    updating: str = ""            # an update that is running, "" if none
-    update_due: datetime | None = None    # when the next update check starts
+    updating: str = ""            # an update check running, "" if none
+    queued: str = ""              # a unit waiting to start, "" if none
+    last_activity: datetime | None = None  # when a setup, refresh or update last ended
 
 
 @dataclass(frozen=True)
@@ -73,14 +73,20 @@ def decide(s: Snapshot) -> Decision:
         return Decision(False, f"{s.ssh_sessions} SSH session(s) open")
     if s.refreshing:
         return Decision(False, f"{s.refreshing} is running")
-    # An update is bounded by its unit's own timeout; cut off half-way it
-    # would only be tried again a day later.
+    # Each refresh runs an update check first (deploy/epd-update.service),
+    # bounded by its unit's own timeout; cut off half-way, an update would
+    # only be tried again at the next wake-up.
     if s.updating:
-        return Decision(False, f"{s.updating} is installing an update")
-    if s.update_due is not None and \
-            -timedelta(seconds=UPDATE_LATE) <= s.update_due - s.now \
-            <= timedelta(seconds=UPDATE_WAIT):
-        return Decision(False, f"an update check is due at {_hm(s.update_due)}")
+        return Decision(False, f"{s.updating}: checking for or installing an update")
+    # A job in the queue is about to run (the refresh waits for the check,
+    # the check for the network), but systemd puts no limit on waiting: one
+    # stuck behind something that never comes is dropped after QUEUE_WAIT.
+    if s.queued:
+        since = max(s.boot, s.last_activity or s.boot)
+        until = since + timedelta(seconds=QUEUE_WAIT)
+        if s.now < until:
+            return Decision(False, f"{s.queued} is queued to start (waiting until "
+                                   f"{_hm(until)})")
 
     schedule, now = s.schedule, s.now
     wake = schedule.next_wake(now)

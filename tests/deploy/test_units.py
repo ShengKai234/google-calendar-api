@@ -92,6 +92,93 @@ def test_refresh_never_shuts_down_on_its_own():
             assert "poweroff" not in text, unit.name
 
 
+def test_every_refresh_checks_for_an_update_first():
+    """No clock of its own: gcal-epd.service wants epd-update.service, which
+    runs BEFORE it, so the panel is drawn by the newest release; Wants= (not
+    Requires=), so a failed or offline check still lets the refresh run."""
+    refresh = (DEPLOY / "gcal-epd.service").read_text().split("[Service]", 1)[0]
+    assert re.search(r"^Wants=.*\bepd-update\.service\b", refresh, re.M)
+    assert not re.search(r"^Requires=.*epd-update", refresh, re.M)
+    update = (DEPLOY / "epd-update.service").read_text()
+    assert re.search(r"^Before=.*\bgcal-epd\.service\b", update, re.M)
+    assert not re.search(r"^After=.*\bgcal-epd\.service\b", update, re.M)
+    assert not (DEPLOY / "epd-update.timer").exists()
+
+
+def test_update_check_runs_after_the_clock_and_setup():
+    """It now runs first: after the RTC sets the clock (TLS needs it) and
+    after Wi-Fi and calendar setup, never alongside them."""
+    power = (DEPLOY / "epd-power.service").read_text()
+    before = re.search(r"^Before=(.*)$", power, re.M).group(1).split()
+    assert "epd-update.service" in before
+    update = (DEPLOY / "epd-update.service").read_text()
+    after = " ".join(re.findall(r"^After=(.*)$", update, re.M)).split()
+    assert {"epd-wifi-setup.service", "epd-feed-setup.service"} <= set(after)
+
+
+def test_update_hook_lives_in_a_unit_file_every_installer_rewrites():
+    """Review 50-1: an enablement link (WantedBy= + systemctl enable) would
+    outlive a rollback, since an older release's install.sh never removes
+    it. The Wants= line in gcal-epd.service goes with the unit file."""
+    update = (DEPLOY / "epd-update.service").read_text()
+    assert "[Install]" not in update
+    script = (DEPLOY / "install.sh").read_text()
+    assert "enable epd-update.service" not in script
+    assert "enable --now epd-update.service" not in script
+    assert "enable epd-update.timer" not in script and "start  epd-update.timer" not in script
+
+
+def test_install_retires_the_daily_update_timer():
+    """Displays updated from a release with epd-update.timer lose it."""
+    script = (DEPLOY / "install.sh").read_text()
+    assert "systemctl disable --now epd-update.timer" in script
+    assert "/etc/systemd/system/epd-update.timer" in script
+    assert "/etc/systemd/system/epd-update.timer.d" in script
+
+
+def test_ordered_jobs_have_no_job_timeout():
+    """Reviews 50-5/50-6: JobTimeoutSec= cancels a job without stopping its
+    service, so the update's ordering barrier could vanish mid-install, and
+    a merged refresh job keeps an old deadline. A stuck queue is bounded by
+    the power manager instead (power_policy.QUEUE_WAIT)."""
+    for unit in ("epd-update.service", "gcal-epd.service", "epd-feed-setup.service"):
+        assert "JobTimeoutSec" not in (DEPLOY / unit).read_text(), unit
+
+
+def _setting(unit, key):
+    m = re.search(rf"^{key}=(.*)$", (DEPLOY / unit).read_text(), re.M)
+    return m and m.group(1).strip()
+
+
+@pytest.mark.parametrize("unit, limit", [
+    ("epd-update.service", "15min"),  # check + download + verify + build + test render (7-12 min seen on a Pi Zero)
+    ("gcal-epd.service", "3min"),     # fetch calendars and weather + draw the panel
+    ("epd-power.service", "2min"),    # its setup: clock from the RTC, schedule
+])
+def test_each_unit_has_its_own_run_time_limit(unit, limit):
+    """A unit that hangs while running would keep a battery Pi on until it is
+    empty; the 5-minute queue rule only covers waiting. TimeoutStartSec
+    counts from the unit's own start, and stopping it kills the whole
+    control group (pip, the build), unlike JobTimeoutSec."""
+    assert _setting(unit, "TimeoutStartSec") == limit
+    assert _setting(unit, "KillMode") in (None, "control-group")
+    assert _setting(unit, "RuntimeMaxSec") is None
+
+
+def test_the_refresh_still_runs_after_a_failed_or_stopped_update():
+    refresh = (DEPLOY / "gcal-epd.service").read_text()
+    for strict in ("Requires", "Requisite", "BindsTo", "PartOf"):
+        assert not re.search(rf"^{strict}=.*epd-update", refresh, re.M), strict
+    assert _setting("epd-update.service", "Type") == "oneshot"
+    assert _setting("gcal-epd.service", "Type") == "oneshot"
+
+
+def test_a_stopped_update_has_time_to_go_back():
+    """On SIGTERM the updater switches back to the old release and reinstalls
+    its units before it exits; then systemd's SIGKILL."""
+    assert _setting("epd-update.service", "TimeoutStopSec") == "90s"
+
+
 def test_timer_defaults_match_the_default_schedule():
     from gcal_epd.domain.power_schedule import DEFAULT_SLOTS, format_slot
 

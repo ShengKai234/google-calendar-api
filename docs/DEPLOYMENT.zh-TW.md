@@ -16,7 +16,7 @@
 | SD 卡準備 | `deploy/sdcard/prepare.sh` | 插著 SD 卡的 Mac（或 Linux 電腦） |
 | 首次開機 | `deploy/sdcard/firstboot.sh`，由 cloud-init 執行一次 | Pi |
 | Release 安裝程式 | `python3 -m gcal_epd.releases`（`src/gcal_epd/releases.py`、`infrastructure/release/`） | Pi，以 root 執行 |
-| OTA 自動更新 | `releases update`（`infrastructure/release/updater.py`），由 `epd-update.timer` 每天執行 | Pi，以 root 執行 |
+| OTA 自動更新 | `releases update`（`infrastructure/release/updater.py`），每次刷新前由 `epd-update.service` 執行 | Pi，以 root 執行 |
 | Units | `deploy/install.sh`（由安裝程式以 `--yes` 呼叫） | Pi |
 
 一個 release 發布成四個檔案：
@@ -126,7 +126,7 @@ journalctl -b -u epd-wifi-setup -u gcal-epd --no-pager | tail -50
    bash deploy/release/sign.sh v0.2.0
    ```
 
-   它會下載所有檔案、逐一對照 `SHA256SUMS`、簽署 `SHA256SUMS`，並上傳 `SHA256SUMS.sig`。簽好之後，beta 頻道的裝置會在下次每日檢查時安裝它。
+   它會下載所有檔案、逐一對照 `SHA256SUMS`、簽署 `SHA256SUMS`，並上傳 `SHA256SUMS.sig`。簽好之後，beta 頻道的裝置會在下次刷新時安裝它。
 
 4. 在 beta 裝置上運作正常後，升級為 stable；stable 頻道的裝置會在下次檢查時安裝：
 
@@ -213,7 +213,7 @@ PiSugar 的套件用網址釘住（PiSugar 在 GitHub 的 release），`--refres
 
 ### 自動更新
 
-安裝成 release 的裝置會自己更新。`epd-update.timer` 每天執行一次 `python3 -m gcal_epd.releases update`，時間是晚上刷新後一分鐘：台灣時間 19:01，或設定表單上最後一個喚醒時間的一分鐘後（由 `power_manager apply-schedule` 寫入 drop-in）。早上的刷新不會更新；Pi 關機時錯過的檢查會等到隔天晚上。用 PiSugar 電池時，10 分鐘內有更新檢查、或更新正在進行，電源管理都不會關機。步驟如下：
+安裝成 release 的裝置會自己更新。`gcal-epd.service` 每一次刷新（早上、晚上、排程、開機，或用 `sudo systemctl start gcal-epd.service` 手動刷新都算），都會先執行 `epd-update.service`（`python3 -m gcal_epd.releases update`），再畫面板，所以面板永遠是最新版本畫的（`gcal-epd.service` 設定了 `Wants=epd-update.service`，而它的順序是 `Before=` 刷新）。不管檢查結果是沒有新版本、已更新，還是失敗（例如沒網路），刷新都照常執行。自己直接執行 `gcal_epd.main` 不會檢查更新。沒有新版本時，檢查只會讓刷新晚幾秒；更新最多可以跑 15 分鐘（見[時間限制](#時間限制)），期間面板維持上一次的日曆。它沒有自己的時間表，所以 Pi 就算關機過、或開機時時鐘還沒校正，下一次刷新還是會檢查。用 PiSugar 電池時，更新檢查或刷新正在執行時，電源管理都不會關機；在排隊等待時，最多從上一個工作結束起再等 5 分鐘，避免卡住的排隊把電池耗光。舊版每天 19:01 的 `epd-update.timer`，更新到這個版本時會被移除。步驟如下：
 
 1. 列出 repo 在 GitHub 上的所有 release；
 2. 挑出符合裝置頻道、比目前版本新（絕不降版）、而且之前沒在這台失敗過的最新版本；
@@ -221,7 +221,18 @@ PiSugar 的套件用網址釘住（PiSugar 在 GitHub 的 release），`--refres
 4. 建置並切換過去，跟一般安裝一樣（新版本能 import 之前，舊版本照常運作）；
 5. 用新版本以 app 使用者身分畫一次日曆，但不推到面板。如果當掉或卡住，就 rollback 回上一個版本，之後也不會再試這個版本。建置連續失敗三次的版本同樣會放棄。
 
-接著立刻刷新一次面板，馬上顯示新版本；電池供電的 Pi 會在這次刷新後關機。
+接著，原本在等它的那次刷新會用新版本畫面板（手動啟動的更新會自己啟動一次刷新）；電池供電的 Pi 會在這次刷新後關機。
+
+### 時間限制
+
+每個 unit 都有自己的執行時間上限（`TimeoutStartSec`），從那個 unit 自己開始執行時起算；時間到了，systemd 會停掉這個 unit 的整個 process group（包括 pip 與建置）。在佇列中等待的時間不算，那段由電源管理限制。
+
+| 項目 | 上限 | 時間到時 |
+|---|---|---|
+| `epd-update.service`：檢查、下載、驗證、建置、試畫 | 15 分鐘（Pi Zero 上實測 7–12 分鐘） | Pi 回到原本執行中的版本（包括 unit）；算一次失敗，同一版本失敗 3 次就放棄；殘留的檔案在下次檢查時清掉；刷新照常用舊版本執行 |
+| `gcal-epd.service`：抓日曆與天氣、畫面板 | 3 分鐘 | 被停掉；電源管理照一般刷新後的流程關機 |
+| `epd-power.service` 的準備步驟：用 RTC 設定時鐘、排程 | 2 分鐘 | 被停掉；Wi-Fi 設定與刷新照常進行 |
+| 在佇列中等待開始的刷新或更新檢查 | 上一個 unit 結束（或開機）後 5 分鐘 | 電源管理不再為它保持開機 |
 
 ### 頻道
 
@@ -269,7 +280,7 @@ sudo env PYTHONPATH=/tmp/rel/src python3 -m gcal_epd.releases install \
     --source e-pages-0.2.0.tar.gz --wheels wheels --user "$USER"
 ```
 
-新版本建置期間（Pi Zero 約 5 分鐘），裝置繼續跑舊版本。之後：
+新版本建置期間（Pi Zero 上要好幾分鐘），裝置繼續跑舊版本。之後：
 
 ```bash
 $P list                 # 已安裝的版本，標出 current 和 previous

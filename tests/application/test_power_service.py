@@ -48,7 +48,6 @@ class FakeSystem:
             "epd-feed-setup.service": UnitState("inactive", None),
             "epd-update.service": UnitState("inactive", None),
         }
-        self.timers = {}
         self.ntp = False
         self.sessions = 0
         self.argvs = []
@@ -58,9 +57,6 @@ class FakeSystem:
 
     def unit_state(self, unit):
         return self.units.get(unit)
-
-    def timer_next(self, unit):
-        return self.timers.get(unit)
 
     def ntp_synchronized(self):
         return self.ntp
@@ -327,17 +323,29 @@ def test_status_survives_pisugar_errors(tmp_path):
 def test_apply_schedule_reloads_only_on_change(tmp_path):
     system = FakeSystem()
     path = tmp_path / "gcal-epd.timer.d" / "power-schedule.conf"
-    update = tmp_path / "epd-update.timer.d" / "power-schedule.conf"
-    assert apply_schedule(PowerSchedule(), TPE, system, path, update)
-    assert system.reloads == ["daemon-reload", "gcal-epd.timer", "epd-update.timer"]
-    assert not apply_schedule(PowerSchedule(), TPE, system, path, update)
-    assert len(system.reloads) == 3
-    # 08:00 only: both timers move.
-    assert apply_schedule(PowerSchedule(slots=(time(8),)), TPE, system, path, update)
-    assert len(system.reloads) == 6
-    # A new morning slot moves the refreshes, not the evening update check.
-    assert apply_schedule(PowerSchedule(slots=(time(6), time(8))), TPE, system, path, update)
-    assert system.reloads[-2:] == ["daemon-reload", "gcal-epd.timer"]
+    assert apply_schedule(PowerSchedule(), TPE, system, path, tmp_path / "none.conf")
+    assert system.reloads == ["daemon-reload", "gcal-epd.timer"]
+    assert not apply_schedule(PowerSchedule(), TPE, system, path, tmp_path / "none.conf")
+    assert len(system.reloads) == 2
+    assert apply_schedule(PowerSchedule(slots=(time(8),)), TPE, system, path,
+                          tmp_path / "none.conf")
+    assert len(system.reloads) == 4
+
+
+def test_apply_schedule_removes_the_old_update_timer_dropin(tmp_path):
+    """The update check follows each refresh now; epd-update.timer is gone."""
+    system = FakeSystem()
+    path = tmp_path / "gcal-epd.timer.d" / "power-schedule.conf"
+    old = tmp_path / "epd-update.timer.d" / "power-schedule.conf"
+    old.parent.mkdir()
+    old.write_text("[Timer]\nOnCalendar=*-*-* 19:01:00 Asia/Taipei\n")
+    apply_schedule(PowerSchedule(), TPE, system, path, old)
+    assert not old.exists() and not old.parent.exists()
+    assert system.reloads == ["daemon-reload", "gcal-epd.timer"]
+    old.parent.mkdir()
+    old.write_text("x")
+    assert apply_schedule(PowerSchedule(), TPE, system, path, old)   # only the leftover
+    assert system.reloads[-1] == "daemon-reload" and not old.exists()
 
 
 def test_no_pisugar_installed_does_not_wait(tmp_path):
@@ -370,60 +378,51 @@ def test_any_activity_probe_will_do(tmp_path):
 
 
 # --- updates -----------------------------------------------------------
-def test_waits_for_the_evening_update_check_then_for_the_update(tmp_path):
-    """18:55 wake; refresh at 19:00; the update check at 19:01 keeps it on."""
-    rig = Rig(tmp_path, now=at(19, 0, 30), uptime=330.0)
-    rig.system.units["gcal-epd.service"] = UnitState("inactive", 320.0)
-    rig.system.timers["epd-update.timer"] = at(19, 1).timestamp()
-    s = rig.manager.snapshot()
-    assert s.update_due == at(19, 1)
-    rig.t = at(19, 3)  # grace over, but the update is running
-    rig.system.timers["epd-update.timer"] = at(19, 1, day=20).timestamp()
-    rig.system.units["epd-update.service"] = UnitState("activating", None)
-    d = decide(rig.manager.snapshot())
-    assert not d.power_off and "installing an update" in d.reason
+def _check_then_refresh(tmp_path):
+    """06:55 wake (monotonic 0); an earlier refresh ended at 06:56 (60 s)."""
+    rig = Rig(tmp_path, now=at(6, 57), uptime=120.0)
 
-
-def test_evening_update_check_from_due_to_done(tmp_path):
-    """Every step from the 18:57 refresh to the end of the update keeps the
-    Pi on, with the refresh's grace long over (issue #48, reviews 48-1/48-2)."""
-    rig = Rig(tmp_path, now=at(19, 0), uptime=300.0)
-    rig.system.units["gcal-epd.service"] = UnitState("inactive", 120.0)   # 18:57
-    rig.system.timers["epd-update.timer"] = at(19, 1).timestamp()
-
-    def off_at(when):
-        rig.t, rig.mono = when, 300.0 + (when - at(19, 0)).total_seconds()
+    def off_at(when, update, refresh):
+        rig.t, rig.mono = when, 120.0 + (when - at(6, 57)).total_seconds()
+        rig.system.units["epd-update.service"] = update
+        rig.system.units["gcal-epd.service"] = refresh
         return decide(rig.manager.snapshot()).power_off
-
-    assert not off_at(at(19, 0))                    # due in a minute
-    assert not off_at(at(19, 1, 30))                # due, systemd not there yet
-    del rig.system.timers["epd-update.timer"]       # fired: next elapse is infinity
-    rig.system.units["epd-update.service"] = UnitState("inactive", None, queued=True)
-    assert not off_at(at(19, 1, 40))                # start job queued
-    rig.system.units["epd-update.service"] = UnitState("activating", None)
-    assert not off_at(at(19, 4))                    # installing
-    rig.system.units["epd-update.service"] = UnitState("inactive", 900.0)
-    rig.system.timers["epd-update.timer"] = at(19, 1, day=20).timestamp()
-    assert off_at(at(19, 10))                       # done: off
+    return off_at
 
 
-def test_update_timer_firing_mid_snapshot_keeps_it_on(tmp_path):
-    """The timer fires between the probes (review 48-3): whichever moment it
-    lands in, one snapshot must still see either the due time or the job."""
-    rig = Rig(tmp_path, now=at(19, 1), uptime=300.0)
-    rig.system.units["gcal-epd.service"] = UnitState("inactive", 120.0)   # 18:57
-    rig.system.timers["epd-update.timer"] = at(19, 1).timestamp()
-    probe = rig.system.unit_state
+def test_update_check_then_refresh_keeps_it_on_until_done(tmp_path):
+    """The check runs first with the refresh queued behind it; the Pi stays
+    on through both and the instant between them, then powers off after
+    the refresh's grace."""
+    off_at = _check_then_refresh(tmp_path)
+    queued_refresh = UnitState("inactive", 60.0, queued=True)
+    queued_update = UnitState("inactive", None, queued=True)
+    assert not off_at(at(6, 57), queued_update, queued_refresh)
+    # Grace over (06:58); only the queue holds it now (review 50-2).
+    assert not off_at(at(7, 0), queued_update, queued_refresh)
+    assert not off_at(at(7, 5), UnitState("activating", None), queued_refresh)
+    checked = UnitState("inactive", 780.0)                               # 07:08
+    assert not off_at(at(7, 8), checked, queued_refresh)                 # between the two
+    assert not off_at(at(7, 9), checked, UnitState("activating", 60.0))
+    drawn = UnitState("inactive", 840.0)                                 # 07:09
+    assert not off_at(at(7, 10), checked, drawn)                         # grace
+    assert off_at(at(7, 12), checked, drawn)
 
-    def fire_after_reading(unit):
-        state = probe(unit)
-        if unit == "epd-update.service":    # systemd fires the timer right now
-            rig.system.timers.pop("epd-update.timer", None)
-            rig.system.units[unit] = UnitState("inactive", None, queued=True)
-        return state
 
-    rig.system.unit_state = fire_after_reading
-    assert not decide(rig.manager.snapshot()).power_off
+def test_a_stuck_queued_refresh_lets_it_power_off(tmp_path):
+    """Review 50-4: nothing has moved for QUEUE_WAIT; a refresh still
+    queued (behind a network that never came) no longer keeps it on."""
+    off_at = _check_then_refresh(tmp_path)
+    stuck = UnitState("inactive", 60.0, queued=True)
+    assert not off_at(at(7, 0), UnitState("inactive", None), stuck)      # 4 min after 06:56
+    assert off_at(at(7, 2), UnitState("inactive", None), stuck)          # 6 min after
+
+
+def test_a_queued_feed_setup_counts_too(tmp_path):
+    rig = Rig(tmp_path, now=at(6, 59), uptime=240.0)
+    rig.system.units["epd-feed-setup.service"] = UnitState("inactive", None, queued=True)
+    d = decide(rig.manager.snapshot())
+    assert not d.power_off and "epd-feed-setup.service" in d.reason
 
 
 def test_unknown_update_state_keeps_it_on(tmp_path):
@@ -431,3 +430,14 @@ def test_unknown_update_state_keeps_it_on(tmp_path):
     assert decide(rig.manager.snapshot()).power_off
     del rig.system.units["epd-update.service"]
     assert "state unknown" in decide(rig.manager.snapshot()).reason
+
+
+def test_a_refresh_stopped_by_its_time_limit_powers_off_normally(tmp_path):
+    """gcal-epd.service ran past TimeoutStartSec: systemd stopped it and it
+    "failed". Like any finished refresh: grace, alarm, off."""
+    rig = Rig(tmp_path, now=at(6, 59), uptime=240.0)
+    rig.system.units["gcal-epd.service"] = UnitState("failed", 230.0)    # 06:58:50
+    assert not decide(rig.manager.snapshot()).power_off                  # grace
+    rig.t, rig.mono = at(7, 1), 360.0
+    assert decide(rig.manager.snapshot()).power_off
+    assert rig.manager.run() == "powered-off"

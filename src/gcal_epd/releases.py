@@ -18,20 +18,24 @@ and names itself, then points the systemd units at /opt/e-pages/current.
 `switch` and `rollback` reinstall the units too, from the release they
 switch to: releases may ship different units, and the running ones must
 be the ones that release expects.
-`update` is the over-the-air update (epd-update.timer runs it): fetch the
-newest signed release for this display's channel from GitHub, install it
-as above, check that the calendar renders with it, and roll back if not.
+`update` is the over-the-air update (epd-update.service runs it before each
+refresh): fetch the newest signed release for this display's channel from
+GitHub, install it as above, check that the calendar renders with it, and
+roll back if not.
 Standard library only, so it runs before any venv exists.
 """
 import argparse
+import fcntl
 import logging
 import os
 import pwd
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -50,6 +54,39 @@ REFRESH_UNIT = "gcal-epd.service"
 # A release whose build fails this many times is not tried again.
 MAX_ATTEMPTS = 3
 DOWNLOAD_PREFIX = ".download-"
+UPDATE_LOCK = ".update.lock"
+
+
+class Terminated(BaseException):
+    """systemd stopped the update (SIGTERM at epd-update.service's
+    TimeoutStartSec). A BaseException, so no `except Exception` swallows it
+    before the updater has gone back to the release it was running."""
+
+
+def _stop_on_sigterm() -> None:
+    """Turn the first SIGTERM into Terminated; ignore later ones, so going
+    back to the old release is not cut short (SIGKILL ends it at
+    TimeoutStopSec)."""
+    stopping = []
+
+    def handler(signum, frame):
+        if not stopping:
+            stopping.append(signum)
+            raise Terminated()
+    signal.signal(signal.SIGTERM, handler)
+
+
+def clean_leftovers(layout: ReleaseLayout) -> list[str]:
+    """Remove downloads and builds cut short (a time limit, a power cut)."""
+    removed = []
+    with layout.locked():
+        for leftover in layout.base.glob(f"{DOWNLOAD_PREFIX}*"):
+            shutil.rmtree(leftover, ignore_errors=True)
+            removed.append(leftover.name)
+        removed += layout.remove_unfinished()
+    if removed:
+        log.info("Removed what an earlier update left unfinished: %s", ", ".join(removed))
+    return removed
 
 
 def _owner(user: str):
@@ -162,10 +199,33 @@ def health_check(layout: ReleaseLayout, user: str, run=installer.run) -> bool:
     return True
 
 
+def _go_back(layout: ReleaseLayout, label: str, user: str, run, no_units: bool,
+             units: bool = False) -> None:
+    """Stopped mid-update: run `label` (the release that was running) again,
+    with its own units. switch() is a rename(2), so at every instant one
+    whole release is current; the units are reinstalled best effort, when
+    it switched back or `units` says they may be half-installed."""
+    if not layout.is_complete(label):
+        return
+    switched = layout.current() != label
+    if switched:
+        log.error("Stopped mid-update: going back to %s.", label)
+        with layout.locked():
+            layout.switch(label)
+    if (switched or units) and not no_units:
+        try:
+            _install_units(layout, user, run)
+        except InstallError as e:
+            log.error("Could not reinstall the units of %s: %s", label, e)
+
+
 def _refresh_panel(run=installer.run) -> None:
-    """Draw the calendar with the new release now, not at the next slot. On
-    a battery Pi the power manager waits for this refresh before powering
-    off. --no-block: the refresh runs on after the update has finished."""
+    """Draw the calendar with the new release now, not at the next slot.
+    Usually a refresh is already queued behind this update (gcal-epd.service
+    wants it and runs after it), and this start merges into that one; an
+    update started by hand gets one here. On a battery Pi the power manager
+    waits for it before powering off. --no-block: the refresh is ordered
+    after the update, so waiting for it here would never end."""
     try:
         run(["systemctl", "start", "--no-block", REFRESH_UNIT])
     except InstallError as e:
@@ -197,6 +257,25 @@ def update(args, layout: ReleaseLayout, run=installer.run, fetch=updater.fetch,
         log.info("Updates are off ([update] enabled = false).")
         return None
     channel = args.channel or settings.channel
+    with _one_update(layout):
+        return _update(args, layout, run, fetch, download, now, current, settings, channel)
+
+
+@contextmanager
+def _one_update(layout: ReleaseLayout):
+    """One `releases update` at a time: a second one (say, by hand) would
+    clean up the first one's download as a leftover."""
+    layout.base.mkdir(parents=True, exist_ok=True)
+    with open(layout.base / UPDATE_LOCK, "w") as f:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise InstallError("An update is already running.") from None
+        yield
+
+
+def _update(args, layout, run, fetch, download, now, current, settings, channel):
+    clean_leftovers(layout)
     state = updater.State.load(layout.data)
     state.last_check = now()
     try:
@@ -218,13 +297,18 @@ def update(args, layout: ReleaseLayout, run=installer.run, fetch=updater.fetch,
     except (InstallError, ReleaseError, OSError) as e:
         state.last_result = f"failed: {e}".splitlines()[0]
         raise
+    except Terminated:
+        now_on = layout.current()
+        state.last_result = (
+            f"updated {current} -> {now_on}; stopped while starting the refresh"
+            if now_on != current and state.updated_to == now_on
+            else f"stopped by its time limit; still on {now_on}")
+        raise
     finally:
         state.save(layout.data)
 
 
 def _apply(cand, current, layout, state, run, fetch, download, now, no_units) -> str:
-    for leftover in layout.base.glob(f"{DOWNLOAD_PREFIX}*"):   # a power cut mid-download
-        shutil.rmtree(leftover, ignore_errors=True)
     if not updater.enough_room(layout.base):
         raise InstallError(f"Less than {updater.MIN_FREE_BYTES // 2**20} MB free "
                            f"on {layout.base}: not updating.")
@@ -233,27 +317,40 @@ def _apply(cand, current, layout, state, run, fetch, download, now, no_units) ->
     attempts[cand.label] = attempts.get(cand.label, 0) + 1
     if attempts[cand.label] >= MAX_ATTEMPTS:
         state.rejected.append(cand.label)   # the next run skips it
-    with tempfile.TemporaryDirectory(dir=layout.base, prefix=DOWNLOAD_PREFIX) as tmp:
-        app, wheels = updater.fetch_release(cand, Path(tmp),
-                                            layout.current_link / updater.SIGNERS,
-                                            fetch, download, run)
-        named = Source(app).label()
-        if named != cand.label:
-            raise InstallError(f"{cand.tag}'s code names itself {named}: not installing.")
-        install(SimpleNamespace(source=str(app), user=user, wheels=str(wheels),
-                                migrate_from=None, no_units=no_units), layout, run)
-    attempts.pop(cand.label, None)
-    if cand.label in state.rejected:
-        state.rejected.remove(cand.label)
-
-    if health_check(layout, user, run):
+    # On disk before the long part: a SIGKILL leaves no time to save it.
+    state.save(layout.data)
+    healthy = None
+    try:
+        with tempfile.TemporaryDirectory(dir=layout.base, prefix=DOWNLOAD_PREFIX) as tmp:
+            app, wheels = updater.fetch_release(cand, Path(tmp),
+                                                layout.current_link / updater.SIGNERS,
+                                                fetch, download, run)
+            named = Source(app).label()
+            if named != cand.label:
+                raise InstallError(f"{cand.tag}'s code names itself {named}: not installing.")
+            install(SimpleNamespace(source=str(app), user=user, wheels=str(wheels),
+                                    migrate_from=None, no_units=no_units), layout, run)
+        healthy = health_check(layout, user, run)
+        if not healthy:
+            attempts.pop(cand.label, None)
+            if cand.label not in state.rejected:
+                state.rejected.append(cand.label)
+            switch(SimpleNamespace(version=None, user=user, no_units=no_units), layout, run)
+    except Terminated:
+        if healthy is not True:
+            # Stopped before the new release proved itself, or while rolling
+            # back from one that did not: the old one, with its own units.
+            _go_back(layout, current, user, run, no_units, units=healthy is False)
+        raise
+    if healthy:
+        attempts.pop(cand.label, None)   # counted as a failure until here
+        if cand.label in state.rejected:
+            state.rejected.remove(cand.label)
         state.updated_at, state.updated_to = now(), cand.label
         log.info("Updated %s -> %s.", current, cand.label)
         if not no_units:
             _refresh_panel(run)
         return cand.label
-    switch(SimpleNamespace(version=None, user=user, no_units=no_units), layout, run)
-    state.rejected.append(cand.label)
     raise InstallError(f"{cand.label} failed its health check; rolled back to "
                        f"{layout.current()} and will not try it again.")
 
@@ -330,6 +427,7 @@ def main(argv=None) -> int:
             args.version = None
             switch(args, layout)
         elif args.command == "update":
+            _stop_on_sigterm()
             update(args, layout)
         elif args.command == "status":
             _status(layout)
@@ -339,6 +437,9 @@ def main(argv=None) -> int:
             log.info("Removed: %s", ", ".join(removed) if removed else "nothing")
     except (InstallError, ReleaseError, subprocess.CalledProcessError, OSError) as e:
         log.error("%s", e)
+        return 1
+    except Terminated:
+        log.error("Stopped by its time limit; running %s.", layout.current())
         return 1
     return 0
 

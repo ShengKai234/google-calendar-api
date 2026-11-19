@@ -19,7 +19,7 @@ by an AI agent working in this repository.
 | Card preparation | `deploy/sdcard/prepare.sh` | Mac (or Linux PC) with the card plugged in |
 | First boot | `deploy/sdcard/firstboot.sh`, run once by cloud-init | the Pi |
 | Release installer | `python3 -m gcal_epd.releases` (`src/gcal_epd/releases.py`, `infrastructure/release/`) | the Pi, as root |
-| Over-the-air update | `releases update` (`infrastructure/release/updater.py`), run daily by `epd-update.timer` | the Pi, as root |
+| Over-the-air update | `releases update` (`infrastructure/release/updater.py`), run before each refresh by `epd-update.service` | the Pi, as root |
 | Units | `deploy/install.sh` (called by the installer with `--yes`) | the Pi |
 
 A release is published as four files:
@@ -160,7 +160,7 @@ from step 1 (cloud-init runs `user-data` once per card).
 
    It downloads every file, checks each against `SHA256SUMS`, signs
    `SHA256SUMS` and uploads `SHA256SUMS.sig`. From then on, displays on
-   the beta channel install it at their next daily check.
+   the beta channel install it at their next refresh.
 
 4. Once it has run well on the beta display, promote it to stable; stable
    displays then install it at their next check:
@@ -271,13 +271,23 @@ URLs and SHA-256 by hand and test the card.
 
 ### Automatic updates
 
-A display installed as a release updates itself. `epd-update.timer` runs
-`python3 -m gcal_epd.releases update` once a day, a minute after the
-evening refresh: 19:01 Taiwan time, or a minute after the last wake-up
-time set on the setup form (`power_manager apply-schedule` writes a
-drop-in). Never at the morning refresh, and a check missed while the Pi
-was off waits for the next evening. On a PiSugar battery the power manager
-stays on for a check due within 10 minutes and while an update runs. It:
+A display installed as a release updates itself. Every refresh of
+`gcal-epd.service`, morning and evening, from the timer, at boot or with
+`sudo systemctl start gcal-epd.service`, first runs `epd-update.service`
+(`python3 -m gcal_epd.releases update`) and then draws the panel, so the
+panel always shows the newest release (`gcal-epd.service` has
+`Wants=epd-update.service`, which is ordered `Before=` it). The refresh
+runs whatever the check did: nothing new, updated, or failed (offline,
+say). Running `gcal_epd.main` yourself does not check.
+With nothing new the check takes a few seconds before the refresh; an
+update may run for up to 15 minutes (see [Time limits](#time-limits)), and
+the panel keeps the previous calendar until it is done. It has no clock of its own, so a Pi
+that was off or booted with a stale clock still checks at its next
+refresh. On a PiSugar battery the power manager stays on while the check
+or the refresh runs, and while one waits to start, for up to 5 minutes
+after the last one ended, so a stuck queue cannot drain the battery.
+Releases that had a daily `epd-update.timer` (19:01) lose it when they
+update to this one. It:
 
 1. lists the repository's releases on GitHub;
 2. picks the newest one for the display's channel that is newer than the
@@ -292,8 +302,23 @@ stays on for a check due within 10 minutes and while an update runs. It:
    release and never tries this one again. A release whose build fails
    three times is given up too.
 
-Then it starts a refresh, so the panel shows the new release right away;
-a battery Pi powers off after that refresh.
+Then the refresh that was waiting for it draws the panel with the new
+release (an update started by hand starts one); a battery Pi powers off
+after that refresh.
+
+### Time limits
+
+Each unit has its own run-time limit (`TimeoutStartSec`), counted from
+that unit's own start; when it is reached, systemd stops the unit's whole
+process group (pip and the build included). Waiting in the queue does not
+count: the power manager bounds that.
+
+| What | Limit | When it is reached |
+|---|---|---|
+| `epd-update.service`: check, download, verify, build, test render | 15 min (7–12 min seen on a Pi Zero) | the Pi goes back to the release it was running (units included); counts as one failed try, and a release is given up after 3; leftovers are removed at the next check; the refresh still runs, with the old release |
+| `gcal-epd.service`: fetch calendars and weather, draw the panel | 3 min | stopped; the power manager powers off as after any refresh |
+| `epd-power.service` setup: clock from the RTC, schedule | 2 min | stopped; Wi-Fi setup and the refresh go on |
+| a refresh or update check waiting to start | 5 min after the last unit ended (or boot) | the power manager no longer stays on for it |
 
 ### Channel
 
@@ -342,8 +367,8 @@ sudo env PYTHONPATH=/tmp/rel/src python3 -m gcal_epd.releases install \
     --source e-pages-0.2.0.tar.gz --wheels wheels --user "$USER"
 ```
 
-The display keeps running the old release while the new one builds (about
-5 minutes on a Pi Zero). Then:
+The display keeps running the old release while the new one builds
+(several minutes on a Pi Zero). Then:
 
 ```bash
 $P list                 # installed releases, current and previous marked

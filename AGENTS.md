@@ -13,7 +13,7 @@ everything about installing it.
 | Make a new SD card | [docs/DEPLOYMENT.md → Set up a new display](docs/DEPLOYMENT.md#set-up-a-new-display): Imager, then `deploy/sdcard/prepare.sh`, then boot |
 | Card for unreleased code | `venv/bin/python -m gcal_epd.build_release`, then `prepare.sh --bundle dist/<label>/*-sdcard.zip` |
 | Publish a release | [docs/DEPLOYMENT.md → Publish a release](docs/DEPLOYMENT.md#publish-a-release): bump `pyproject.toml`, tag `vX.Y.Z`, the maintainer signs on their Mac |
-| Update a running display | Automatic, daily, if installed as a release; by hand: [docs/DEPLOYMENT.md → Update a running display](docs/DEPLOYMENT.md#update-a-running-display) |
+| Update a running display | Automatic, before each refresh, if installed as a release; by hand: [docs/DEPLOYMENT.md → Update a running display](docs/DEPLOYMENT.md#update-a-running-display) |
 | See a display's update state | on the Pi: `sudo env PYTHONPATH=/opt/e-pages/current/src python3 -m gcal_epd.releases status` |
 | Run the tests | `venv/bin/python -m pytest -q` (CI: Python 3.11 and 3.13) |
 | Render without a panel | `venv/bin/python -m gcal_epd.main` writes `preview.png` |
@@ -52,6 +52,10 @@ everything about installing it.
   refresh; an open SSH session keeps it on.
 - A new card ships pisugar-server (PiSugar 3, 127.0.0.1 only, no web page;
   see deploy/sdcard/firstboot.sh). Never switch its web page on or listen
-  on 0.0.0.0: anyone on the network could power the Pi off. Updates run
-  only a minute after the last wake-up slot (default 19:01), never in the
-  morning; the power manager waits for them.
+  on 0.0.0.0: anyone on the network could power the Pi off. An update
+  check runs before every refresh of gcal-epd.service (it Wants=
+  epd-update.service, ordered Before= it; no timer); the power manager
+  waits while the check or the refresh runs, and up to 5 min while one is
+  queued (power_policy.QUEUE_WAIT). Run-time limits (TimeoutStartSec, from
+  each unit's own start): epd-update 15 min (stopped: back to the running
+  release, one failed try), gcal-epd 3 min, epd-power's setup 2 min.

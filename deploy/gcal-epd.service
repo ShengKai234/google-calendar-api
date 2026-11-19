@@ -4,6 +4,16 @@
 Description=Google Calendar e-Paper Display
 After=network-online.target
 Wants=network-online.target
+# Every refresh first checks for an over-the-air update: this pulls
+# epd-update.service into the same start, and its Before= runs it first,
+# so the panel is drawn by the newest release. Wants=, not Requires=: the
+# refresh runs whether the check found nothing, updated or failed. No
+# clock of its own, so a stale boot clock or a Pi off at a fixed time
+# cannot make it miss the check. Installed releases only:
+# a git checkout has no epd-update.service, and a missing wanted unit is
+# skipped. Here, not as an enablement link, so a rollback to a release
+# without it rewrites this file and drops it.
+Wants=epd-update.service
 # Scheduled refresh only once calendars are set up and no links from the
 # Wi-Fi form wait to be checked; otherwise epd-feed-setup.service runs.
 ConditionPathExists=@FEEDS_FILE@
@@ -19,8 +29,10 @@ ExecStart=@PROJECT_DIR@/.venv/bin/python -m gcal_epd.main --display --no-setup
 # No shutdown here: on a PiSugar battery, epd-power.service powers off
 # after the refresh, once it has set the next wake-up alarm.
 
-# Kill if taking longer than 120 seconds
-TimeoutStartSec=120
+# Run-time limit: fetch calendars and weather (their own time limits keep
+# the fetches well inside it) and draw the panel. Counted from this unit's
+# own start, so a slow update check before it never shortens it.
+TimeoutStartSec=3min
 
 # Do not retry on failure (timer will run again at next scheduled time)
 Restart=no
