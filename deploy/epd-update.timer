@@ -8,6 +8,9 @@ Description=Check for a calendar update once a day
 # after the LAST slot of the power schedule (a drop-in), so it follows the
 # times set on the setup form. Never at the morning slot.
 OnCalendar=*-*-* 19:01:00 Asia/Taipei
+# On time, not up to a minute late (the default): the power manager holds
+# the Pi on for the check only briefly past its time.
+AccuracySec=1s
 # Missed (a battery Pi was off): wait for the next evening, not the next
 # boot, which is the morning one.
 Persistent=false

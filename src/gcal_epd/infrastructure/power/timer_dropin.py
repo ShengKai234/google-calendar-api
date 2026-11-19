@@ -58,7 +58,7 @@ def render_dropin(schedule: PowerSchedule, tz: ZoneInfo) -> str:
 def render_update_dropin(schedule: PowerSchedule, tz: ZoneInfo) -> str:
     lines = _HEADER + ["[Timer]", "OnCalendar=",
                        f"OnCalendar=*-*-* {format_slot(update_time(schedule))}:00 {tz.key}",
-                       "RandomizedDelaySec=0", "Persistent=false"]
+                       "RandomizedDelaySec=0", "AccuracySec=1s", "Persistent=false"]
     return "\n".join(lines) + "\n"
 
 

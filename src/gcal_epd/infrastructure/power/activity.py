@@ -50,14 +50,20 @@ class SystemdActivity:
             if state.last_exit is not None:
                 last_end = max(last_end or state.last_exit, state.last_exit)
         # Over-the-air updates (installed releases only; elsewhere the timer
-        # is not installed and has no next time).
+        # is not installed and has no next time). The timer first: if it
+        # fires between the two reads, the service read then sees its job;
+        # the other way round, neither read would see it (issue #48).
+        update_next = self.system.timer_next(UPDATE_TIMER)
         state = self.system.unit_state(UPDATE_UNIT)
+        # A start job waiting in the queue counts: once the timer has fired,
+        # it reports no next time until the service has run (issue #48).
         updating = (f"{UPDATE_UNIT} (state unknown)" if state is None
-                    else UPDATE_UNIT if state.busy else "")
+                    else UPDATE_UNIT if state.busy
+                    else f"{UPDATE_UNIT} (queued)" if state.queued else "")
         proc_setup, proc_refresh = classify_processes(self.system.command_lines())
         return Activity(setup=setup or proc_setup,
                         refreshing=refreshing or proc_refresh,
                         ssh_sessions=self.system.remote_sessions(),
                         last_refresh_end=last_end,
                         updating=updating,
-                        update_next=self.system.timer_next(UPDATE_TIMER))
+                        update_next=update_next)
