@@ -19,7 +19,7 @@ by an AI agent working in this repository.
 | Card preparation | `deploy/sdcard/prepare.sh` | Mac (or Linux PC) with the card plugged in |
 | First boot | `deploy/sdcard/firstboot.sh`, run once by cloud-init | the Pi |
 | Release installer | `python3 -m gcal_epd.releases` (`src/gcal_epd/releases.py`, `infrastructure/release/`) | the Pi, as root |
-| Over-the-air update | `releases update` (`infrastructure/release/updater.py`), run after each refresh by `epd-update.service` | the Pi, as root |
+| Over-the-air update | `releases update` (`infrastructure/release/updater.py`), run before each refresh by `epd-update.service` | the Pi, as root |
 | Units | `deploy/install.sh` (called by the installer with `--yes`) | the Pi |
 
 A release is published as four files:
@@ -160,7 +160,7 @@ from step 1 (cloud-init runs `user-data` once per card).
 
    It downloads every file, checks each against `SHA256SUMS`, signs
    `SHA256SUMS` and uploads `SHA256SUMS.sig`. From then on, displays on
-   the beta channel install it after their next refresh.
+   the beta channel install it at their next refresh.
 
 4. Once it has run well on the beta display, promote it to stable; stable
    displays then install it at their next check:
@@ -273,15 +273,18 @@ URLs and SHA-256 by hand and test the card.
 
 A display installed as a release updates itself. Every refresh of
 `gcal-epd.service`, morning and evening, from the timer, at boot or with
-`sudo systemctl start gcal-epd.service`, is followed by
-`epd-update.service`, which runs `python3 -m gcal_epd.releases update`
-once the refresh has ended (`gcal-epd.service` has
-`Wants=epd-update.service`). Running `gcal_epd.main` yourself does not
-check.
-With nothing new it takes a few seconds; an update takes about five
-minutes on a Pi Zero. It has no clock of its own, so a Pi that was off or
-booted with a stale clock still checks at its next refresh. On a PiSugar
-battery the power manager stays on while a check is queued or running.
+`sudo systemctl start gcal-epd.service`, first runs `epd-update.service`
+(`python3 -m gcal_epd.releases update`) and then draws the panel, so the
+panel always shows the newest release (`gcal-epd.service` has
+`Wants=epd-update.service`, which is ordered `Before=` it). The refresh
+runs whatever the check did: nothing new, updated, or failed (offline,
+say). Running `gcal_epd.main` yourself does not check.
+With nothing new the check takes a few seconds before the refresh; an
+update takes about five minutes on a Pi Zero, and the panel keeps the
+previous calendar until it is done. It has no clock of its own, so a Pi
+that was off or booted with a stale clock still checks at its next
+refresh. On a PiSugar battery the power manager stays on while the check
+or the refresh is queued or running.
 Releases that had a daily `epd-update.timer` (19:01) lose it when they
 update to this one. It:
 
@@ -298,8 +301,9 @@ update to this one. It:
    release and never tries this one again. A release whose build fails
    three times is given up too.
 
-Then it starts a refresh, so the panel shows the new release right away;
-a battery Pi powers off after that refresh.
+Then the refresh that was waiting for it draws the panel with the new
+release (an update started by hand starts one); a battery Pi powers off
+after that refresh.
 
 ### Channel
 

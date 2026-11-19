@@ -46,11 +46,15 @@ class SystemdActivity:
                 continue
             if state.busy:
                 refreshing = unit
+            elif state.queued and not refreshing:
+                # Queued behind the update check, which runs first: about to
+                # start, so powering off now would skip it.
+                refreshing = f"{unit} (queued)"
             if state.last_exit is not None:
                 last_end = max(last_end or state.last_exit, state.last_exit)
         # Over-the-air updates (installed releases only). Each refresh
-        # queues a check behind it: a start job waiting in the queue counts,
-        # the service is still "inactive" then.
+        # queues a check that runs before it: a start job waiting in the
+        # queue counts, the service is still "inactive" then.
         state = self.system.unit_state(UPDATE_UNIT)
         updating = (f"{UPDATE_UNIT} (state unknown)" if state is None
                     else UPDATE_UNIT if state.busy

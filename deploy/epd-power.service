@@ -7,7 +7,7 @@ Description=e-Paper power manager (PiSugar wake-up alarm and power-off)
 After=pisugar-server.service
 # The clock comes from the PiSugar's RTC before anything draws a date, so
 # the boot step below finishes before Wi-Fi setup and the calendar start.
-Before=epd-wifi-setup.service gcal-epd.service epd-feed-setup.service
+Before=epd-wifi-setup.service gcal-epd.service epd-feed-setup.service epd-update.service
 
 [Service]
 Type=simple

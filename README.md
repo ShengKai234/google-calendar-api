@@ -275,7 +275,7 @@ bash deploy/install.sh
 
 Over-the-air updates install the app as *releases*, side by side, with an
 atomic switch and a way back; a display installed this way checks for a
-newer signed release after each refresh (see
+newer signed release before each refresh (see
 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#update-a-running-display)):
 
 ```

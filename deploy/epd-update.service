@@ -4,10 +4,13 @@
 Description=e-Paper calendar over-the-air update (newest signed release)
 After=network-online.target time-sync.target
 Wants=network-online.target
-# Runs after each refresh (gcal-epd.service Wants= it), never alongside the
-# panel's own setup or refresh: the build is slow and long. The power
-# manager stays on while it is queued or running.
-After=epd-wifi-setup.service epd-feed-setup.service gcal-epd.service
+# Runs BEFORE each refresh (gcal-epd.service Wants= it), so the panel is
+# drawn by the newest release; after Wi-Fi and calendar setup, never
+# alongside them. A failed check does not stop the refresh (Wants=, not
+# Requires=). epd-power.service sets the clock from the RTC before it.
+# The power manager stays on while it or the refresh is queued or running.
+After=epd-wifi-setup.service epd-feed-setup.service
+Before=gcal-epd.service
 
 [Service]
 Type=oneshot

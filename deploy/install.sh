@@ -94,14 +94,14 @@ echo "      Installed $SERVICE_NAME.service/.timer, epd-wifi-setup, epd-feed-set
 # a git checkout is updated with git, so it gets no update check.
 if [ -f "$PROJECT_DIR/RELEASE" ]; then
     install_unit epd-update.service
-    echo "      Installed epd-update.service (over-the-air update after each refresh)"
+    echo "      Installed epd-update.service (over-the-air update before each refresh)"
 fi
 # Earlier releases checked once a day from epd-update.timer (and its
-# power-schedule drop-in); the check now follows each refresh instead.
+# power-schedule drop-in); the check now runs before each refresh instead.
 if [ -e /etc/systemd/system/epd-update.timer ]; then
     sudo systemctl disable --now epd-update.timer 2>/dev/null || true
     sudo rm -rf /etc/systemd/system/epd-update.timer /etc/systemd/system/epd-update.timer.d
-    echo "      Removed epd-update.timer (the update check follows each refresh now)"
+    echo "      Removed epd-update.timer (the update check runs before each refresh now)"
 fi
 
 # --- Reload systemd ---

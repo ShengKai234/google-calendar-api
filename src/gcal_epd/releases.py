@@ -18,7 +18,7 @@ and names itself, then points the systemd units at /opt/e-pages/current.
 `switch` and `rollback` reinstall the units too, from the release they
 switch to: releases may ship different units, and the running ones must
 be the ones that release expects.
-`update` is the over-the-air update (epd-update.service runs it after each
+`update` is the over-the-air update (epd-update.service runs it before each
 refresh): fetch the newest signed release for this display's channel from
 GitHub, install it as above, check that the calendar renders with it, and
 roll back if not.
@@ -164,9 +164,12 @@ def health_check(layout: ReleaseLayout, user: str, run=installer.run) -> bool:
 
 
 def _refresh_panel(run=installer.run) -> None:
-    """Draw the calendar with the new release now, not at the next slot. On
-    a battery Pi the power manager waits for this refresh before powering
-    off. --no-block: the refresh runs on after the update has finished."""
+    """Draw the calendar with the new release now, not at the next slot.
+    Usually a refresh is already queued behind this update (gcal-epd.service
+    wants it and runs after it), and this start merges into that one; an
+    update started by hand gets one here. On a battery Pi the power manager
+    waits for it before powering off. --no-block: the refresh is ordered
+    after the update, so waiting for it here would never end."""
     try:
         run(["systemctl", "start", "--no-block", REFRESH_UNIT])
     except InstallError as e:

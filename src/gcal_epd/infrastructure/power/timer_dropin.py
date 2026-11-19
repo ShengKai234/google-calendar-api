@@ -16,7 +16,7 @@ The empty OnCalendar= first clears the unit's own lines (systemd.timer(5):
 "If the empty string is assigned to any of these options, the list of
 timers is reset").
 
-The update check has no timer: epd-update.service runs after each refresh
+The update check has no timer: epd-update.service runs before each refresh
 (deploy/epd-update.service). Earlier releases had an epd-update.timer with
 a drop-in written here; apply-schedule removes that leftover drop-in.
 """
@@ -68,7 +68,7 @@ def remove_old_update_dropin(path: Path = OLD_UPDATE_DROPIN) -> bool:
     if not path.exists():
         return False
     shutil.rmtree(path.parent, ignore_errors=True)
-    log.info("Removed %s: the update check follows each refresh now.", path)
+    log.info("Removed %s: the update check runs before each refresh now.", path)
     return True
 
 
