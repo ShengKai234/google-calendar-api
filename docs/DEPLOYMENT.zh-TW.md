@@ -16,7 +16,7 @@
 | SD 卡準備 | `deploy/sdcard/prepare.sh` | 插著 SD 卡的 Mac（或 Linux 電腦） |
 | 首次開機 | `deploy/sdcard/firstboot.sh`，由 cloud-init 執行一次 | Pi |
 | Release 安裝程式 | `python3 -m gcal_epd.releases`（`src/gcal_epd/releases.py`、`infrastructure/release/`） | Pi，以 root 執行 |
-| OTA 自動更新 | `releases update`（`infrastructure/release/updater.py`），由 `epd-update.timer` 每天執行 | Pi，以 root 執行 |
+| OTA 自動更新 | `releases update`（`infrastructure/release/updater.py`），每次刷新後由 `epd-update.service` 執行 | Pi，以 root 執行 |
 | Units | `deploy/install.sh`（由安裝程式以 `--yes` 呼叫） | Pi |
 
 一個 release 發布成四個檔案：
@@ -213,7 +213,7 @@ PiSugar 的套件用網址釘住（PiSugar 在 GitHub 的 release），`--refres
 
 ### 自動更新
 
-安裝成 release 的裝置會自己更新。`epd-update.timer` 每天執行一次 `python3 -m gcal_epd.releases update`，時間是晚上刷新後一分鐘：台灣時間 19:01，或設定表單上最後一個喚醒時間的一分鐘後（由 `power_manager apply-schedule` 寫入 drop-in）。早上的刷新不會更新；Pi 關機時錯過的檢查會等到隔天晚上。用 PiSugar 電池時，10 分鐘內有更新檢查、或更新正在進行，電源管理都不會關機。步驟如下：
+安裝成 release 的裝置會自己更新。每一次刷新之後（早上、晚上、排程、開機或手動都算），`epd-update.service` 都會在刷新結束後執行 `python3 -m gcal_epd.releases update`（這個 service 設定了 `WantedBy=gcal-epd.service`）。沒有新版本時只要幾秒；在 Pi Zero 上更新大約五分鐘。它沒有自己的時間表，所以 Pi 就算關機過、或開機時時鐘還沒校正，下一次刷新還是會檢查。用 PiSugar 電池時，更新檢查排隊中或正在執行，電源管理都不會關機。舊版每天 19:01 的 `epd-update.timer`，更新到這個版本時會被移除。步驟如下：
 
 1. 列出 repo 在 GitHub 上的所有 release；
 2. 挑出符合裝置頻道、比目前版本新（絕不降版）、而且之前沒在這台失敗過的最新版本；

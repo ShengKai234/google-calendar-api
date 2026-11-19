@@ -19,7 +19,7 @@ by an AI agent working in this repository.
 | Card preparation | `deploy/sdcard/prepare.sh` | Mac (or Linux PC) with the card plugged in |
 | First boot | `deploy/sdcard/firstboot.sh`, run once by cloud-init | the Pi |
 | Release installer | `python3 -m gcal_epd.releases` (`src/gcal_epd/releases.py`, `infrastructure/release/`) | the Pi, as root |
-| Over-the-air update | `releases update` (`infrastructure/release/updater.py`), run daily by `epd-update.timer` | the Pi, as root |
+| Over-the-air update | `releases update` (`infrastructure/release/updater.py`), run after each refresh by `epd-update.service` | the Pi, as root |
 | Units | `deploy/install.sh` (called by the installer with `--yes`) | the Pi |
 
 A release is published as four files:
@@ -271,13 +271,16 @@ URLs and SHA-256 by hand and test the card.
 
 ### Automatic updates
 
-A display installed as a release updates itself. `epd-update.timer` runs
-`python3 -m gcal_epd.releases update` once a day, a minute after the
-evening refresh: 19:01 Taiwan time, or a minute after the last wake-up
-time set on the setup form (`power_manager apply-schedule` writes a
-drop-in). Never at the morning refresh, and a check missed while the Pi
-was off waits for the next evening. On a PiSugar battery the power manager
-stays on for a check due within 10 minutes and while an update runs. It:
+A display installed as a release updates itself. Every refresh, morning
+and evening, by the timer, at boot or by hand, is followed by
+`epd-update.service`, which runs `python3 -m gcal_epd.releases update`
+once the refresh has ended (the service is `WantedBy=gcal-epd.service`).
+With nothing new it takes a few seconds; an update takes about five
+minutes on a Pi Zero. It has no clock of its own, so a Pi that was off or
+booted with a stale clock still checks at its next refresh. On a PiSugar
+battery the power manager stays on while a check is queued or running.
+Releases that had a daily `epd-update.timer` (19:01) lose it when they
+update to this one. It:
 
 1. lists the repository's releases on GitHub;
 2. picks the newest one for the display's channel that is newer than the

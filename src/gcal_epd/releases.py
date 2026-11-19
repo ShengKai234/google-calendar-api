@@ -18,9 +18,10 @@ and names itself, then points the systemd units at /opt/e-pages/current.
 `switch` and `rollback` reinstall the units too, from the release they
 switch to: releases may ship different units, and the running ones must
 be the ones that release expects.
-`update` is the over-the-air update (epd-update.timer runs it): fetch the
-newest signed release for this display's channel from GitHub, install it
-as above, check that the calendar renders with it, and roll back if not.
+`update` is the over-the-air update (epd-update.service runs it after each
+refresh): fetch the newest signed release for this display's channel from
+GitHub, install it as above, check that the calendar renders with it, and
+roll back if not.
 Standard library only, so it runs before any venv exists.
 """
 import argparse
