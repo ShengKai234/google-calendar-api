@@ -378,30 +378,51 @@ def test_any_activity_probe_will_do(tmp_path):
 
 
 # --- updates -----------------------------------------------------------
-def test_update_check_then_refresh_keeps_it_on_until_done(tmp_path):
-    """06:55 wake: the update check runs first with the refresh queued
-    behind it; the Pi stays on through both, even in the instant between
-    them, and powers off after the refresh's grace."""
+def _check_then_refresh(tmp_path):
+    """06:55 wake (monotonic 0); an earlier refresh ended at 06:56 (60 s)."""
     rig = Rig(tmp_path, now=at(6, 57), uptime=120.0)
-    # An earlier refresh this boot ended at 06:56; its grace is long over by 07:03.
-    rig.system.units["gcal-epd.service"] = UnitState("inactive", 60.0)
 
     def off_at(when, update, refresh):
         rig.t, rig.mono = when, 120.0 + (when - at(6, 57)).total_seconds()
         rig.system.units["epd-update.service"] = update
         rig.system.units["gcal-epd.service"] = refresh
         return decide(rig.manager.snapshot()).power_off
+    return off_at
 
-    queued = UnitState("inactive", 60.0, queued=True)
-    assert not off_at(at(7, 3), UnitState("inactive", None, queued=True), queued)
-    assert not off_at(at(7, 5), UnitState("activating", None), queued)   # installing
-    # The check has ended, the refresh job has not started yet (review 50-2's
-    # window, now on the refresh side): a queued refresh keeps it on.
-    assert not off_at(at(7, 8), UnitState("inactive", 600.0), queued)
-    assert not off_at(at(7, 9), UnitState("inactive", 600.0), UnitState("activating", 60.0))
-    done = UnitState("inactive", 840.0)                                   # 07:09
-    assert not off_at(at(7, 10), UnitState("inactive", 600.0), done)     # grace
-    assert off_at(at(7, 12), UnitState("inactive", 600.0), done)
+
+def test_update_check_then_refresh_keeps_it_on_until_done(tmp_path):
+    """The check runs first with the refresh queued behind it; the Pi stays
+    on through both and the instant between them, then powers off after
+    the refresh's grace."""
+    off_at = _check_then_refresh(tmp_path)
+    queued_refresh = UnitState("inactive", 60.0, queued=True)
+    queued_update = UnitState("inactive", None, queued=True)
+    assert not off_at(at(6, 57), queued_update, queued_refresh)
+    # Grace over (06:58); only the queue holds it now (review 50-2).
+    assert not off_at(at(7, 0), queued_update, queued_refresh)
+    assert not off_at(at(7, 5), UnitState("activating", None), queued_refresh)
+    checked = UnitState("inactive", 780.0)                               # 07:08
+    assert not off_at(at(7, 8), checked, queued_refresh)                 # between the two
+    assert not off_at(at(7, 9), checked, UnitState("activating", 60.0))
+    drawn = UnitState("inactive", 840.0)                                 # 07:09
+    assert not off_at(at(7, 10), checked, drawn)                         # grace
+    assert off_at(at(7, 12), checked, drawn)
+
+
+def test_a_stuck_queued_refresh_lets_it_power_off(tmp_path):
+    """Review 50-4: nothing has moved for QUEUE_WAIT; a refresh still
+    queued (behind a network that never came) no longer keeps it on."""
+    off_at = _check_then_refresh(tmp_path)
+    stuck = UnitState("inactive", 60.0, queued=True)
+    assert not off_at(at(7, 0), UnitState("inactive", None), stuck)      # 4 min after 06:56
+    assert off_at(at(7, 2), UnitState("inactive", None), stuck)          # 6 min after
+
+
+def test_a_queued_feed_setup_counts_too(tmp_path):
+    rig = Rig(tmp_path, now=at(6, 59), uptime=240.0)
+    rig.system.units["epd-feed-setup.service"] = UnitState("inactive", None, queued=True)
+    d = decide(rig.manager.snapshot())
+    assert not d.power_off and "epd-feed-setup.service" in d.reason
 
 
 def test_unknown_update_state_keeps_it_on(tmp_path):

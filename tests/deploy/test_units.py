@@ -136,29 +136,13 @@ def test_install_retires_the_daily_update_timer():
     assert "/etc/systemd/system/epd-update.timer.d" in script
 
 
-def _seconds(unit, key):
-    """A [Service]/[Unit] time like 120, 900, 30min or 1h, in seconds."""
-    text = (DEPLOY / unit).read_text()
-    m = re.search(rf"^{key}=(\d+)(min|h|s)?$", text, re.M)
-    assert m, f"{unit} has no {key}="
-    return int(m.group(1)) * {"min": 60, "h": 3600, "s": 1, None: 1}[m.group(2)]
-
-
-def test_queued_jobs_have_a_deadline():
-    """Review 50-4: a queued start job counts as busy, so the power manager
-    keeps a battery Pi on for it. TimeoutStartSec only counts once the unit
-    runs and job timeouts default to infinity, so a job stuck in the queue
-    (say, behind a network that never comes up) needs JobTimeoutSec=, long
-    enough for the work it legitimately waits for."""
-    update_job = _seconds("epd-update.service", "JobTimeoutSec")
-    assert update_job > _seconds("epd-update.service", "TimeoutStartSec")
-    # The refresh waits for the whole update check, then draws.
-    assert _seconds("gcal-epd.service", "JobTimeoutSec") >= \
-        update_job + _seconds("gcal-epd.service", "TimeoutStartSec")
-    assert _seconds("epd-feed-setup.service", "JobTimeoutSec") > \
-        _seconds("epd-feed-setup.service", "TimeoutStartSec")
+def test_ordered_jobs_have_no_job_timeout():
+    """Reviews 50-5/50-6: JobTimeoutSec= cancels a job without stopping its
+    service, so the update's ordering barrier could vanish mid-install, and
+    a merged refresh job keeps an old deadline. A stuck queue is bounded by
+    the power manager instead (power_policy.QUEUE_WAIT)."""
     for unit in ("epd-update.service", "gcal-epd.service", "epd-feed-setup.service"):
-        assert _seconds(unit, "JobTimeoutSec") <= 3600, unit   # a battery bound
+        assert "JobTimeoutSec" not in (DEPLOY / unit).read_text(), unit
 
 
 def test_timer_defaults_match_the_default_schedule():
