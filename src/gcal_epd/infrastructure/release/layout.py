@@ -156,12 +156,9 @@ class ReleaseLayout:
         self.switch(prev)
         return prev
 
-    def prune(self, keep: int = 2) -> list[str]:
-        """Remove unfinished builds, and old releases beyond the newest `keep`.
-
-        current and previous are always kept, whatever `keep` says.
-        Returns what was removed.
-        """
+    def remove_unfinished(self) -> list[str]:
+        """Remove builds cut short (still INCOMPLETE); returns their names.
+        Never current or previous: those are always complete."""
         removed = []
         if not self.releases.is_dir():
             return removed
@@ -169,6 +166,17 @@ class ReleaseLayout:
             if p.is_dir() and _valid_label(p.name) and not self.is_complete(p.name):
                 shutil.rmtree(p)
                 removed.append(p.name)
+        return removed
+
+    def prune(self, keep: int = 2) -> list[str]:
+        """Remove unfinished builds, and old releases beyond the newest `keep`.
+
+        current and previous are always kept, whatever `keep` says.
+        Returns what was removed.
+        """
+        removed = self.remove_unfinished()
+        if not self.releases.is_dir():
+            return removed
         protected = {self.current(), self.previous()}
         done = self.labels()
         for label in done[:max(len(done) - keep, 0)]:

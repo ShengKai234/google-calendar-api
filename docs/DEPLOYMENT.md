@@ -280,8 +280,8 @@ panel always shows the newest release (`gcal-epd.service` has
 runs whatever the check did: nothing new, updated, or failed (offline,
 say). Running `gcal_epd.main` yourself does not check.
 With nothing new the check takes a few seconds before the refresh; an
-update takes about five minutes on a Pi Zero, and the panel keeps the
-previous calendar until it is done. It has no clock of its own, so a Pi
+update may run for up to 6 minutes (see [Time limits](#time-limits)), and
+the panel keeps the previous calendar until it is done. It has no clock of its own, so a Pi
 that was off or booted with a stale clock still checks at its next
 refresh. On a PiSugar battery the power manager stays on while the check
 or the refresh runs, and while one waits to start, for up to 5 minutes
@@ -305,6 +305,20 @@ update to this one. It:
 Then the refresh that was waiting for it draws the panel with the new
 release (an update started by hand starts one); a battery Pi powers off
 after that refresh.
+
+### Time limits
+
+Each unit has its own run-time limit (`TimeoutStartSec`), counted from
+that unit's own start; when it is reached, systemd stops the unit's whole
+process group (pip and the build included). Waiting in the queue does not
+count: the power manager bounds that.
+
+| What | Limit | When it is reached |
+|---|---|---|
+| `epd-update.service`: check, download, verify, build, test render | 6 min | the Pi goes back to the release it was running (units included); counts as one failed try, and a release is given up after 3; leftovers are removed at the next check; the refresh still runs, with the old release |
+| `gcal-epd.service`: fetch calendars and weather, draw the panel | 3 min | stopped; the power manager powers off as after any refresh |
+| `epd-power.service` setup: clock from the RTC, schedule | 2 min | stopped; Wi-Fi setup and the refresh go on |
+| a refresh or update check waiting to start | 5 min after the last unit ended (or boot) | the power manager no longer stays on for it |
 
 ### Channel
 
@@ -353,8 +367,8 @@ sudo env PYTHONPATH=/tmp/rel/src python3 -m gcal_epd.releases install \
     --source e-pages-0.2.0.tar.gz --wheels wheels --user "$USER"
 ```
 
-The display keeps running the old release while the new one builds (about
-5 minutes on a Pi Zero). Then:
+The display keeps running the old release while the new one builds
+(several minutes on a Pi Zero). Then:
 
 ```bash
 $P list                 # installed releases, current and previous marked

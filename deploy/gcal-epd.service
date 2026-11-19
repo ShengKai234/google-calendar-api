@@ -29,8 +29,10 @@ ExecStart=@PROJECT_DIR@/.venv/bin/python -m gcal_epd.main --display --no-setup
 # No shutdown here: on a PiSugar battery, epd-power.service powers off
 # after the refresh, once it has set the next wake-up alarm.
 
-# Kill if taking longer than 120 seconds
-TimeoutStartSec=120
+# Run-time limit: fetch calendars and weather (their own time limits keep
+# the fetches well inside it) and draw the panel. Counted from this unit's
+# own start, so a slow update check before it never shortens it.
+TimeoutStartSec=3min
 
 # Do not retry on failure (timer will run again at next scheduled time)
 Restart=no

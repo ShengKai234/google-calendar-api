@@ -23,8 +23,10 @@ ExecStartPre=-@PROJECT_DIR@/.venv/bin/python -m gcal_epd.power_manager boot
 # Never while someone is setting up or logged in, or while
 # /boot/firmware/epd-stay-awake exists.
 ExecStart=@PROJECT_DIR@/.venv/bin/python -m gcal_epd.power_manager run
-# Bounds the boot step, which Wi-Fi setup and the calendar wait for.
-TimeoutStartSec=60
+# Run-time limit of the setup step (clock from the RTC, schedule), which
+# Wi-Fi setup, the update check and the calendar wait for. The power
+# manager itself (ExecStart, Type=simple) runs on: it is what powers off.
+TimeoutStartSec=2min
 Restart=on-failure
 RestartSec=30
 StandardOutput=journal

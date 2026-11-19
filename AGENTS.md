@@ -56,4 +56,6 @@ everything about installing it.
   check runs before every refresh of gcal-epd.service (it Wants=
   epd-update.service, ordered Before= it; no timer); the power manager
   waits while the check or the refresh runs, and up to 5 min while one is
-  queued (power_policy.QUEUE_WAIT).
+  queued (power_policy.QUEUE_WAIT). Run-time limits (TimeoutStartSec, from
+  each unit's own start): epd-update 6 min (stopped: back to the running
+  release, one failed try), gcal-epd 3 min, epd-power's setup 2 min.
