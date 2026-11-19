@@ -10,7 +10,6 @@ from gcal_epd.infrastructure.power.system import System
 REFRESH_UNITS = ("gcal-epd.service", "epd-feed-setup.service")
 SETUP_UNITS = ("epd-wifi-setup.service",)
 UPDATE_UNIT = "epd-update.service"
-UPDATE_TIMER = "epd-update.timer"
 
 
 def classify_processes(argvs: list[list[str]]) -> tuple[str, str]:
@@ -49,14 +48,10 @@ class SystemdActivity:
                 refreshing = unit
             if state.last_exit is not None:
                 last_end = max(last_end or state.last_exit, state.last_exit)
-        # Over-the-air updates (installed releases only; elsewhere the timer
-        # is not installed and has no next time). The timer first: if it
-        # fires between the two reads, the service read then sees its job;
-        # the other way round, neither read would see it (issue #48).
-        update_next = self.system.timer_next(UPDATE_TIMER)
+        # Over-the-air updates (installed releases only). Each refresh
+        # queues a check behind it: a start job waiting in the queue counts,
+        # the service is still "inactive" then.
         state = self.system.unit_state(UPDATE_UNIT)
-        # A start job waiting in the queue counts: once the timer has fired,
-        # it reports no next time until the service has run (issue #48).
         updating = (f"{UPDATE_UNIT} (state unknown)" if state is None
                     else UPDATE_UNIT if state.busy
                     else f"{UPDATE_UNIT} (queued)" if state.queued else "")
@@ -65,5 +60,4 @@ class SystemdActivity:
                         refreshing=refreshing or proc_refresh,
                         ssh_sessions=self.system.remote_sessions(),
                         last_refresh_end=last_end,
-                        updating=updating,
-                        update_next=update_next)
+                        updating=updating)

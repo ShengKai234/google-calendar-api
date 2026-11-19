@@ -18,10 +18,6 @@ GRACE = 120            # seconds to stay up after the refresh, for a quick SSH c
 AWAKE_CAP = 900        # give up on a refresh this long after waking, to save battery
 MIN_OFF = 180          # never power off for a wake-up closer than this: shutdown
                        # takes ~30 s on a Zero, and a missed alarm waits a day
-UPDATE_WAIT = 600      # stay on for an update check due this soon (the evening
-                       # one is a minute after its slot: see timer_dropin.py)
-UPDATE_LATE = 120      # ...and this long after it was due: systemd may start a
-                       # timer up to AccuracySec late, reporting the passed time
 
 
 def _hm(when: datetime) -> str:
@@ -40,8 +36,7 @@ class Snapshot:
     refreshing: str = ""          # a refresh that is running, "" if none
     ssh_sessions: int | None = 0  # None: cannot tell
     last_refresh: datetime | None = None  # when a refresh last finished
-    updating: str = ""            # an update that is running, "" if none
-    update_due: datetime | None = None    # when the next update check starts
+    updating: str = ""            # an update check queued or running, "" if none
 
 
 @dataclass(frozen=True)
@@ -73,14 +68,11 @@ def decide(s: Snapshot) -> Decision:
         return Decision(False, f"{s.ssh_sessions} SSH session(s) open")
     if s.refreshing:
         return Decision(False, f"{s.refreshing} is running")
-    # An update is bounded by its unit's own timeout; cut off half-way it
-    # would only be tried again a day later.
+    # Each refresh queues an update check (deploy/epd-update.service), which
+    # is bounded by its unit's own timeout; cut off half-way, an update would
+    # only be tried again at the next wake-up.
     if s.updating:
-        return Decision(False, f"{s.updating} is installing an update")
-    if s.update_due is not None and \
-            -timedelta(seconds=UPDATE_LATE) <= s.update_due - s.now \
-            <= timedelta(seconds=UPDATE_WAIT):
-        return Decision(False, f"an update check is due at {_hm(s.update_due)}")
+        return Decision(False, f"{s.updating}: checking for or installing an update")
 
     schedule, now = s.schedule, s.now
     wake = schedule.next_wake(now)
