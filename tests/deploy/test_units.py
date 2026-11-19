@@ -92,6 +92,28 @@ def test_refresh_never_shuts_down_on_its_own():
             assert "poweroff" not in text, unit.name
 
 
+def test_every_refresh_is_followed_by_an_update_check():
+    """No clock of its own: enabling epd-update.service hooks it onto
+    gcal-epd.service, so each refresh queues a check that runs after it."""
+    update = (DEPLOY / "epd-update.service").read_text()
+    assert re.search(r"^After=.*\bgcal-epd\.service\b", update, re.M)
+    install = update.split("[Install]", 1)[1]
+    assert re.search(r"^WantedBy=gcal-epd\.service$", install, re.M)
+    assert not (DEPLOY / "epd-update.timer").exists()
+    script = (DEPLOY / "install.sh").read_text()
+    assert "systemctl enable epd-update.service" in script
+    assert "enable --now epd-update.service" not in script   # never start it from an update
+    assert "enable epd-update.timer" not in script and "start  epd-update.timer" not in script
+
+
+def test_install_retires_the_daily_update_timer():
+    """Displays updated from a release with epd-update.timer lose it."""
+    script = (DEPLOY / "install.sh").read_text()
+    assert "systemctl disable --now epd-update.timer" in script
+    assert "/etc/systemd/system/epd-update.timer" in script
+    assert "/etc/systemd/system/epd-update.timer.d" in script
+
+
 def test_timer_defaults_match_the_default_schedule():
     from gcal_epd.domain.power_schedule import DEFAULT_SLOTS, format_slot
 

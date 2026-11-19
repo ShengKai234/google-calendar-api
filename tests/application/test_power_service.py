@@ -327,17 +327,29 @@ def test_status_survives_pisugar_errors(tmp_path):
 def test_apply_schedule_reloads_only_on_change(tmp_path):
     system = FakeSystem()
     path = tmp_path / "gcal-epd.timer.d" / "power-schedule.conf"
-    update = tmp_path / "epd-update.timer.d" / "power-schedule.conf"
-    assert apply_schedule(PowerSchedule(), TPE, system, path, update)
-    assert system.reloads == ["daemon-reload", "gcal-epd.timer", "epd-update.timer"]
-    assert not apply_schedule(PowerSchedule(), TPE, system, path, update)
-    assert len(system.reloads) == 3
-    # 08:00 only: both timers move.
-    assert apply_schedule(PowerSchedule(slots=(time(8),)), TPE, system, path, update)
-    assert len(system.reloads) == 6
-    # A new morning slot moves the refreshes, not the evening update check.
-    assert apply_schedule(PowerSchedule(slots=(time(6), time(8))), TPE, system, path, update)
-    assert system.reloads[-2:] == ["daemon-reload", "gcal-epd.timer"]
+    assert apply_schedule(PowerSchedule(), TPE, system, path, tmp_path / "none.conf")
+    assert system.reloads == ["daemon-reload", "gcal-epd.timer"]
+    assert not apply_schedule(PowerSchedule(), TPE, system, path, tmp_path / "none.conf")
+    assert len(system.reloads) == 2
+    assert apply_schedule(PowerSchedule(slots=(time(8),)), TPE, system, path,
+                          tmp_path / "none.conf")
+    assert len(system.reloads) == 4
+
+
+def test_apply_schedule_removes_the_old_update_timer_dropin(tmp_path):
+    """The update check follows each refresh now; epd-update.timer is gone."""
+    system = FakeSystem()
+    path = tmp_path / "gcal-epd.timer.d" / "power-schedule.conf"
+    old = tmp_path / "epd-update.timer.d" / "power-schedule.conf"
+    old.parent.mkdir()
+    old.write_text("[Timer]\nOnCalendar=*-*-* 19:01:00 Asia/Taipei\n")
+    apply_schedule(PowerSchedule(), TPE, system, path, old)
+    assert not old.exists() and not old.parent.exists()
+    assert system.reloads == ["daemon-reload", "gcal-epd.timer"]
+    old.parent.mkdir()
+    old.write_text("x")
+    assert apply_schedule(PowerSchedule(), TPE, system, path, old)   # only the leftover
+    assert system.reloads[-1] == "daemon-reload" and not old.exists()
 
 
 def test_no_pisugar_installed_does_not_wait(tmp_path):
@@ -424,6 +436,22 @@ def test_update_timer_firing_mid_snapshot_keeps_it_on(tmp_path):
 
     rig.system.unit_state = fire_after_reading
     assert not decide(rig.manager.snapshot()).power_off
+
+
+def test_update_check_after_a_refresh_keeps_it_on_until_done(tmp_path):
+    """06:55 wake, refresh ends 06:57: the update check it queued runs
+    next, and the Pi stays on until that ends, grace or not."""
+    rig = Rig(tmp_path, now=at(6, 57), uptime=120.0)
+    rig.system.units["gcal-epd.service"] = UnitState("inactive", 120.0)
+
+    def off_at(when, update):
+        rig.t, rig.mono = when, 120.0 + (when - at(6, 57)).total_seconds()
+        rig.system.units["epd-update.service"] = update
+        return decide(rig.manager.snapshot()).power_off
+
+    assert not off_at(at(6, 57), UnitState("inactive", None, queued=True))
+    assert not off_at(at(7, 5), UnitState("activating", None))      # installing
+    assert off_at(at(7, 6), UnitState("inactive", 600.0))          # done: off
 
 
 def test_unknown_update_state_keeps_it_on(tmp_path):
