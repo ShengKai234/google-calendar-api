@@ -31,14 +31,22 @@ class SystemdActivity:
         self.system = system
 
     def activity(self) -> Activity:
-        setup = refreshing = ""
+        setup = refreshing = queued = ""
+        last_end = last_any = None
+
+        def ended(state):
+            nonlocal last_any
+            if state.last_exit is not None:
+                last_any = max(last_any or state.last_exit, state.last_exit)
+
         for unit in SETUP_UNITS:
             state = self.system.unit_state(unit)
             if state is None:
                 setup = f"{unit} (state unknown)"
-            elif state.busy:
+                continue
+            if state.busy:
                 setup = unit
-        last_end = None
+            ended(state)
         for unit in REFRESH_UNITS:
             state = self.system.unit_state(unit)
             if state is None:
@@ -46,22 +54,30 @@ class SystemdActivity:
                 continue
             if state.busy:
                 refreshing = unit
-            elif state.queued and not refreshing:
-                # Queued behind the update check, which runs first: about to
-                # start, so powering off now would skip it.
-                refreshing = f"{unit} (queued)"
+            elif state.queued:
+                # Behind the update check, which runs first: about to start.
+                queued = queued or unit
             if state.last_exit is not None:
                 last_end = max(last_end or state.last_exit, state.last_exit)
+            ended(state)
         # Over-the-air updates (installed releases only). Each refresh
-        # queues a check that runs before it: a start job waiting in the
-        # queue counts, the service is still "inactive" then.
+        # queues a check that runs before it; while its start job waits in
+        # the queue the service is still "inactive".
         state = self.system.unit_state(UPDATE_UNIT)
-        updating = (f"{UPDATE_UNIT} (state unknown)" if state is None
-                    else UPDATE_UNIT if state.busy
-                    else f"{UPDATE_UNIT} (queued)" if state.queued else "")
+        updating = ""
+        if state is None:
+            updating = f"{UPDATE_UNIT} (state unknown)"
+        else:
+            if state.busy:
+                updating = UPDATE_UNIT
+            elif state.queued:
+                queued = queued or UPDATE_UNIT
+            ended(state)
         proc_setup, proc_refresh = classify_processes(self.system.command_lines())
         return Activity(setup=setup or proc_setup,
                         refreshing=refreshing or proc_refresh,
                         ssh_sessions=self.system.remote_sessions(),
                         last_refresh_end=last_end,
-                        updating=updating)
+                        updating=updating,
+                        queued=queued,
+                        last_activity_end=last_any)

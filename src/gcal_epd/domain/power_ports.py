@@ -63,7 +63,10 @@ class Activity:
     refreshing: str = ""                    # a refresh that is running, "" if none
     ssh_sessions: int | None = 0            # None: cannot tell
     last_refresh_end: float | None = None   # CLOCK_MONOTONIC seconds, None if none
-    updating: str = ""                      # an update queued or running, "" if none
+    updating: str = ""                      # an update check running, "" if none
+    queued: str = ""                        # a unit waiting to start, "" if none
+    last_activity_end: float | None = None  # CLOCK_MONOTONIC seconds the last of
+                                            # them (setup, refresh, update) ended
 
 
 @runtime_checkable

@@ -18,10 +18,6 @@ Wants=epd-update.service
 # Wi-Fi form wait to be checked; otherwise epd-feed-setup.service runs.
 ConditionPathExists=@FEEDS_FILE@
 ConditionPathExists=!@PENDING_FILE@
-# The whole job, queued and running: up to the update check's 45 min,
-# which runs first, then the 2 min refresh. A job left in the queue (say,
-# behind a network that never comes up) would keep a battery Pi on.
-JobTimeoutSec=50min
 
 [Service]
 Type=oneshot

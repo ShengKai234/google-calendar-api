@@ -8,13 +8,10 @@ Wants=network-online.target
 # drawn by the newest release; after Wi-Fi and calendar setup, never
 # alongside them. A failed check does not stop the refresh (Wants=, not
 # Requires=). epd-power.service sets the clock from the RTC before it.
-# The power manager stays on while it or the refresh is queued or running.
+# The power manager stays on while it or the refresh runs, and while one
+# waits in the queue, for up to 5 min after the last unit ended.
 After=epd-wifi-setup.service epd-feed-setup.service
 Before=gcal-epd.service
-# The whole job, queued and running, ends after 45 min (30 min to run, the
-# rest waiting for the network or setup): a job left in the queue would
-# keep a battery Pi on, and only running time counts for TimeoutStartSec.
-JobTimeoutSec=45min
 
 [Service]
 Type=oneshot

@@ -55,4 +55,5 @@ everything about installing it.
   on 0.0.0.0: anyone on the network could power the Pi off. An update
   check runs before every refresh of gcal-epd.service (it Wants=
   epd-update.service, ordered Before= it; no timer); the power manager
-  waits while the check or the refresh is queued or running.
+  waits while the check or the refresh runs, and up to 5 min while one is
+  queued (power_policy.QUEUE_WAIT).

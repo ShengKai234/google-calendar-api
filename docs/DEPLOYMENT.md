@@ -284,7 +284,8 @@ update takes about five minutes on a Pi Zero, and the panel keeps the
 previous calendar until it is done. It has no clock of its own, so a Pi
 that was off or booted with a stale clock still checks at its next
 refresh. On a PiSugar battery the power manager stays on while the check
-or the refresh is queued or running.
+or the refresh runs, and while one waits to start, for up to 5 minutes
+after the last one ended, so a stuck queue cannot drain the battery.
 Releases that had a daily `epd-update.timer` (19:01) lose it when they
 update to this one. It:
 
