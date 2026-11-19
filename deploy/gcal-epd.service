@@ -4,6 +4,14 @@
 Description=Google Calendar e-Paper Display
 After=network-online.target
 Wants=network-online.target
+# Every refresh is followed by an over-the-air update check: this pulls
+# epd-update.service into the same start, and its After= runs it once the
+# refresh has ended. No clock of its own, so a stale boot clock or a Pi off
+# at a fixed time cannot make it miss the check. Installed releases only:
+# a git checkout has no epd-update.service, and a missing wanted unit is
+# skipped. Here, not as an enablement link, so a rollback to a release
+# without it rewrites this file and drops it.
+Wants=epd-update.service
 # Scheduled refresh only once calendars are set up and no links from the
 # Wi-Fi form wait to be checked; otherwise epd-feed-setup.service runs.
 ConditionPathExists=@FEEDS_FILE@

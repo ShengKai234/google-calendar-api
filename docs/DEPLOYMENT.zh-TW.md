@@ -213,7 +213,7 @@ PiSugar 的套件用網址釘住（PiSugar 在 GitHub 的 release），`--refres
 
 ### 自動更新
 
-安裝成 release 的裝置會自己更新。每一次刷新之後（早上、晚上、排程、開機或手動都算），`epd-update.service` 都會在刷新結束後執行 `python3 -m gcal_epd.releases update`（這個 service 設定了 `WantedBy=gcal-epd.service`）。沒有新版本時只要幾秒；在 Pi Zero 上更新大約五分鐘。它沒有自己的時間表，所以 Pi 就算關機過、或開機時時鐘還沒校正，下一次刷新還是會檢查。用 PiSugar 電池時，更新檢查排隊中或正在執行，電源管理都不會關機。舊版每天 19:01 的 `epd-update.timer`，更新到這個版本時會被移除。步驟如下：
+安裝成 release 的裝置會自己更新。`gcal-epd.service` 每一次刷新之後（早上、晚上、排程、開機，或用 `sudo systemctl start gcal-epd.service` 手動刷新都算），`epd-update.service` 都會在刷新結束後執行 `python3 -m gcal_epd.releases update`（`gcal-epd.service` 設定了 `Wants=epd-update.service`）。自己直接執行 `gcal_epd.main` 不會檢查更新。沒有新版本時只要幾秒；在 Pi Zero 上更新大約五分鐘。它沒有自己的時間表，所以 Pi 就算關機過、或開機時時鐘還沒校正，下一次刷新還是會檢查。用 PiSugar 電池時，更新檢查排隊中或正在執行，電源管理都不會關機。舊版每天 19:01 的 `epd-update.timer`，更新到這個版本時會被移除。步驟如下：
 
 1. 列出 repo 在 GitHub 上的所有 release；
 2. 挑出符合裝置頻道、比目前版本新（絕不降版）、而且之前沒在這台失敗過的最新版本；

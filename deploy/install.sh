@@ -95,9 +95,6 @@ echo "      Installed $SERVICE_NAME.service/.timer, epd-wifi-setup, epd-feed-set
 if [ -f "$PROJECT_DIR/RELEASE" ]; then
     install_unit epd-update.service
     echo "      Installed epd-update.service (over-the-air update after each refresh)"
-    UPDATES=yes
-else
-    UPDATES=no
 fi
 # Earlier releases checked once a day from epd-update.timer (and its
 # power-schedule drop-in); the check now follows each refresh instead.
@@ -117,11 +114,6 @@ sudo systemctl enable "$SERVICE_NAME.timer"
 sudo systemctl start  "$SERVICE_NAME.timer"
 # Runs at the next boot: a hotspot for Wi-Fi setup if no network is joined.
 sudo systemctl enable epd-wifi-setup.service
-# Enabled, not started: it hooks onto gcal-epd.service (WantedBy=), and an
-# update that is running this script must not start another one.
-if [ "$UPDATES" = yes ]; then
-    sudo systemctl enable epd-update.service
-fi
 # Runs at the next boot: RTC clock, then power-off after the refresh (PiSugar only).
 sudo systemctl enable epd-power.service
 # Already running (an update, or a reinstall): carry on with this code. It

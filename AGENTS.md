@@ -53,6 +53,6 @@ everything about installing it.
 - A new card ships pisugar-server (PiSugar 3, 127.0.0.1 only, no web page;
   see deploy/sdcard/firstboot.sh). Never switch its web page on or listen
   on 0.0.0.0: anyone on the network could power the Pi off. An update
-  check follows every refresh (epd-update.service is WantedBy
-  gcal-epd.service; no timer); the power manager waits while it is queued
-  or running.
+  check follows every refresh of gcal-epd.service (it Wants=
+  epd-update.service; no timer); the power manager waits while it is
+  queued or running.

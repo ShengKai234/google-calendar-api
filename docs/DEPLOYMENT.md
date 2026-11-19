@@ -271,10 +271,13 @@ URLs and SHA-256 by hand and test the card.
 
 ### Automatic updates
 
-A display installed as a release updates itself. Every refresh, morning
-and evening, by the timer, at boot or by hand, is followed by
+A display installed as a release updates itself. Every refresh of
+`gcal-epd.service`, morning and evening, from the timer, at boot or with
+`sudo systemctl start gcal-epd.service`, is followed by
 `epd-update.service`, which runs `python3 -m gcal_epd.releases update`
-once the refresh has ended (the service is `WantedBy=gcal-epd.service`).
+once the refresh has ended (`gcal-epd.service` has
+`Wants=epd-update.service`). Running `gcal_epd.main` yourself does not
+check.
 With nothing new it takes a few seconds; an update takes about five
 minutes on a Pi Zero. It has no clock of its own, so a Pi that was off or
 booted with a stale clock still checks at its next refresh. On a PiSugar
