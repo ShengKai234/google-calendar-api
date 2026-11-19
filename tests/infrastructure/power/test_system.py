@@ -39,7 +39,17 @@ def test_unit_state_running_oneshot():
     assert state == UnitState("activating", None)
     assert state.busy
     assert run.calls[0] == ["systemctl", "show", "gcal-epd.service", "-p", "ActiveState",
-                            "-p", "ExecMainExitTimestampMonotonic"]
+                            "-p", "ExecMainExitTimestampMonotonic", "-p", "Job"]
+
+
+@pytest.mark.parametrize("job, queued", [("Job=635\n", True), ("Job=\n", False),
+                                         ("Job=0\n", False), ("", False)])
+def test_unit_state_sees_a_pending_job(job, queued):
+    # A timer that fired queues a start job; until it runs (After= other
+    # units) the service is still "inactive" (issue #48, review 48-1).
+    run = Runner({("systemctl", "show"):
+                  "ActiveState=inactive\nExecMainExitTimestampMonotonic=0\n" + job})
+    assert System(run=run).unit_state("epd-update.service").queued is queued
 
 
 def test_unit_state_finished():

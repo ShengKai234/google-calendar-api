@@ -140,9 +140,22 @@ def test_zero_lead():
 
 
 # --- decide: updates ----------------------------------------------------
-def test_an_update_check_far_off_or_past_does_not_keep_it_on():
+def test_an_update_check_far_off_or_long_past_does_not_keep_it_on():
     assert decide(snap(update_due=at(19, 1))).power_off
-    assert decide(snap(update_due=at(6, 58))).power_off
+    assert decide(snap(update_due=at(6, 56))).power_off
+
+
+def test_an_update_check_just_overdue_keeps_it_on():
+    # systemd may start a timer up to AccuracySec after its time; until it
+    # does, the timer still reports the passed time (review 48-2).
+    d = decide(snap(now=at(19, 1, 10, day=19), boot=at(18, 55), refreshed=at(18, 57),
+                    update_due=at(19, 1)))
+    assert not d.power_off and "19:01" in d.reason
+
+
+def test_a_queued_update_keeps_it_on():
+    d = decide(snap(updating="epd-update.service (queued)"))
+    assert not d.power_off and "epd-update.service (queued)" in d.reason
 
 
 def test_an_update_beats_the_awake_cap():

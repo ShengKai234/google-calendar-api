@@ -39,7 +39,7 @@ def test_update_check_runs_once_a_minute_after_the_last_slot():
     text = render_update_dropin(PowerSchedule(slots=(time(7), time(19))), TPE)
     lines = [line for line in text.splitlines() if not line.startswith("#")]
     assert lines == ["[Timer]", "OnCalendar=", "OnCalendar=*-*-* 19:01:00 Asia/Taipei",
-                     "RandomizedDelaySec=0", "Persistent=false"]
+                     "RandomizedDelaySec=0", "AccuracySec=1s", "Persistent=false"]
 
 
 def test_update_time_wraps_past_midnight():

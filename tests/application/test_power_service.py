@@ -384,6 +384,29 @@ def test_waits_for_the_evening_update_check_then_for_the_update(tmp_path):
     assert not d.power_off and "installing an update" in d.reason
 
 
+def test_evening_update_check_from_due_to_done(tmp_path):
+    """Every step from the 18:57 refresh to the end of the update keeps the
+    Pi on, with the refresh's grace long over (issue #48, reviews 48-1/48-2)."""
+    rig = Rig(tmp_path, now=at(19, 0), uptime=300.0)
+    rig.system.units["gcal-epd.service"] = UnitState("inactive", 120.0)   # 18:57
+    rig.system.timers["epd-update.timer"] = at(19, 1).timestamp()
+
+    def off_at(when):
+        rig.t, rig.mono = when, 300.0 + (when - at(19, 0)).total_seconds()
+        return decide(rig.manager.snapshot()).power_off
+
+    assert not off_at(at(19, 0))                    # due in a minute
+    assert not off_at(at(19, 1, 30))                # due, systemd not there yet
+    del rig.system.timers["epd-update.timer"]       # fired: next elapse is infinity
+    rig.system.units["epd-update.service"] = UnitState("inactive", None, queued=True)
+    assert not off_at(at(19, 1, 40))                # start job queued
+    rig.system.units["epd-update.service"] = UnitState("activating", None)
+    assert not off_at(at(19, 4))                    # installing
+    rig.system.units["epd-update.service"] = UnitState("inactive", 900.0)
+    rig.system.timers["epd-update.timer"] = at(19, 1, day=20).timestamp()
+    assert off_at(at(19, 10))                       # done: off
+
+
 def test_unknown_update_state_keeps_it_on(tmp_path):
     rig = Rig(tmp_path, now=at(7, 0), uptime=300.0)
     assert decide(rig.manager.snapshot()).power_off
