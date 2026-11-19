@@ -133,15 +133,46 @@ def test_poweroff_failure_is_reported():
     assert not System(run=Runner(fail=[("systemctl",)])).poweroff()
 
 
-def test_timer_next():
-    run = Runner({("systemctl", "show", "epd-update.timer"):
-                  "NextElapseUSecRealtime=@1793271660\n"})
-    assert System(run=run).timer_next("epd-update.timer") == 1793271660.0
-    assert run.calls[0] == ["systemctl", "show", "epd-update.timer", "--timestamp=unix",
-                            "-p", "NextElapseUSecRealtime"]
+TIMER_PROPERTY = ["org.freedesktop.systemd1.Timer", "NextElapseUSecRealtime"]
 
 
-@pytest.mark.parametrize("out", ["NextElapseUSecRealtime=\n", "", "NextElapseUSecRealtime=@x\n"])
+def test_timer_next_reads_microseconds_over_dbus():
+    # busctl prints the property as a number whatever the locale or the
+    # systemd version (`t <microseconds since the epoch>`).
+    run = Runner({("busctl",): "t 1795129200000000\n"})
+    assert System(run=run).timer_next("epd-update.timer") == 1795129200.0
+    assert run.calls[0] == ["busctl", "get-property", "org.freedesktop.systemd1",
+                            "/org/freedesktop/systemd1/unit/epd_2dupdate_2etimer",
+                            *TIMER_PROPERTY]
+
+
+def test_timer_next_does_not_depend_on_systemctl_timestamp_format():
+    # systemd 257 ignores --timestamp=unix for this property and prints a
+    # date (issue #48); whatever systemctl says, the answer comes from D-Bus.
+    run = Runner({("systemctl",): "NextElapseUSecRealtime=Fri 2026-11-20 19:01:00 CST\n",
+                  ("busctl",): "t 1795172460000000\n"})
+    assert System(run=run).timer_next("epd-update.timer") == 1795172460.0
+
+
+@pytest.mark.parametrize("unit, path", [
+    ("epd-update.timer", "/org/freedesktop/systemd1/unit/epd_2dupdate_2etimer"),
+    ("gcal-epd.timer", "/org/freedesktop/systemd1/unit/gcal_2depd_2etimer"),
+    ("2x.timer", "/org/freedesktop/systemd1/unit/_32x_2etimer"),
+])
+def test_timer_next_escapes_the_unit_object_path(unit, path):
+    run = Runner({("busctl",): "t 1\n"})
+    System(run=run).timer_next(unit)
+    assert run.calls[0][3] == path
+
+
+@pytest.mark.parametrize("out", [
+    "t 0\n",                         # never elapses
+    "t 18446744073709551615\n",      # infinity: not installed, or its service is running
+    "", "t\n", "t x\n", "s \"x\"\n",
+])
 def test_timer_next_none_when_not_scheduled(out):
-    assert System(run=Runner({("systemctl",): out})).timer_next("t.timer") is None
-    assert System(run=Runner(fail=[("systemctl",)])).timer_next("t.timer") is None
+    assert System(run=Runner({("busctl",): out})).timer_next("t.timer") is None
+
+
+def test_timer_next_none_when_busctl_fails():
+    assert System(run=Runner(fail=[("busctl",)])).timer_next("t.timer") is None
