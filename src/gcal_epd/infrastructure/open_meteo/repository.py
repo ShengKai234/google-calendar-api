@@ -1,8 +1,10 @@
 import json
 import logging
+import time
 import urllib.request
 
 from gcal_epd.domain.weather import WeatherInfo
+from gcal_epd.infrastructure import fetch_budget
 
 log = logging.getLogger(__name__)
 
@@ -36,8 +38,29 @@ def _current_precipitation_probability(data: dict) -> int:
     return 0
 
 
+def _download(url: str, limit: fetch_budget.RequestLimit) -> bytes:
+    with urllib.request.urlopen(url, timeout=limit.connect_timeout) as resp:
+        limit.remaining()
+        # urllib exposes one timeout for opening the connection. Its body is
+        # http.client.HTTPResponse; change that connection's socket timeout
+        # once headers have arrived, without changing global socket defaults.
+        resp.fp.raw._sock.settimeout(limit.read_timeout)
+        chunks = []
+        while True:
+            limit.remaining()
+            chunk = resp.read(64 * 1024)
+            limit.remaining()
+            if not chunk:
+                return b"".join(chunks)
+            chunks.append(chunk)
+
+
 class OpenMeteoRepository:
-    def __init__(self, latitude: float, longitude: float, location: str = "") -> None:
+    def __init__(self, latitude: float, longitude: float, location: str = "",
+                 *, budget: fetch_budget.FetchBudget | None = None,
+                 clock=time.monotonic) -> None:
+        self._budget = budget
+        self._clock = clock
         self._lat = latitude
         self._lon = longitude
         self._location = location or f"{latitude:.2f},{longitude:.2f}"
@@ -54,8 +77,9 @@ class OpenMeteoRepository:
             f"&temperature_unit=celsius"
         )
         try:
-            with urllib.request.urlopen(url, timeout=10) as resp:
-                data = json.loads(resp.read())
+            limit = (self._budget.request() if self._budget is not None
+                     else fetch_budget.RequestLimit(clock=self._clock))
+            data = json.loads(fetch_budget.run_bounded(_download, (url,), limit))
             current = data["current"]
             code = current.get("weather_code", 0)
             return WeatherInfo(
@@ -65,6 +89,8 @@ class OpenMeteoRepository:
                 location=self._location,
                 precipitation_probability=_current_precipitation_probability(data),
             )
+        except fetch_budget.BudgetSpent:
+            log.warning("Skipping weather (api.open-meteo.com): refresh fetch budget exhausted")
         except Exception as e:
-            log.warning("Could not fetch weather: %s", e)
-            return WeatherInfo(temperature=0.0, condition="N/A", humidity=0, location=self._location)
+            log.warning("Could not fetch weather (api.open-meteo.com) (%s)", type(e).__name__)
+        return WeatherInfo(temperature=0.0, condition="N/A", humidity=0, location=self._location)

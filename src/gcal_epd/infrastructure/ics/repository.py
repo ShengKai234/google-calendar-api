@@ -8,6 +8,7 @@ client-side before being handed to the domain.
 """
 import datetime
 import logging
+import time
 from urllib.parse import urlsplit
 
 import icalendar
@@ -15,6 +16,7 @@ import recurring_ical_events
 import requests
 
 from gcal_epd.domain.event import CalendarEvent
+from gcal_epd.infrastructure import fetch_budget
 
 log = logging.getLogger(__name__)
 
@@ -24,7 +26,7 @@ log = logging.getLogger(__name__)
 # what level the application selects.
 logging.getLogger("urllib3.connectionpool").setLevel(logging.INFO)
 
-DEFAULT_TIMEOUT = 20
+DEFAULT_TIMEOUT = fetch_budget.REQUEST_TIMEOUT
 _USER_AGENT = "gcal-epd/1.0"
 
 
@@ -79,13 +81,35 @@ def events_from_ics(
     return events[:max_results]
 
 
+def _download(url: str, limit: fetch_budget.RequestLimit) -> bytes:
+    response = requests.get(
+        url, timeout=(limit.connect_timeout, limit.read_timeout),
+        headers={"User-Agent": _USER_AGENT}, stream=True,
+    )
+    try:
+        limit.remaining()
+        response.raise_for_status()
+        chunks = []
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            limit.remaining()
+            chunks.append(chunk)
+        limit.remaining()
+        return b"".join(chunks)
+    finally:
+        response.close()
+
+
 class ICSRepository:
     """Fetches one .ics feed. Satisfies the EventRepository protocol."""
 
-    def __init__(self, url: str, name: str = "", timeout: int = DEFAULT_TIMEOUT) -> None:
+    def __init__(self, url: str, name: str = "", timeout: float = DEFAULT_TIMEOUT,
+                 *, budget: fetch_budget.FetchBudget | None = None,
+                 clock=time.monotonic) -> None:
         self._url = normalize_feed_url(url)
         self._name = name
         self._timeout = timeout
+        self._budget = budget
+        self._clock = clock
 
     @property
     def _log_label(self) -> str:
@@ -94,7 +118,7 @@ class ICSRepository:
         The feed URL embeds a private token and these logs land in the
         systemd journal, so a feed is only ever identified by name and host.
         """
-        host = urlsplit(self._url).netloc or "unknown host"
+        host = urlsplit(self._url).hostname or "unknown host"
         return f"{self._name or 'feed'} ({host})"
 
     def fetch_raw(self) -> bytes:
@@ -106,19 +130,25 @@ class ICSRepository:
         this instead, because "no events" and "unreachable" are different
         answers and an empty calendar is perfectly legitimate.
         """
-        response = requests.get(
-            self._url,
-            timeout=self._timeout,
-            headers={"User-Agent": _USER_AGENT},
-        )
-        response.raise_for_status()
-        return response.content
+        limit = (self._budget.request(self._timeout) if self._budget is not None
+                 else fetch_budget.RequestLimit(self._timeout, self._clock))
+        try:
+            return fetch_budget.run_bounded(_download, (self._url,), limit)
+        except fetch_budget.FetchFailure as error:
+            if error.status is not None:
+                response = requests.Response()
+                response.status_code = error.status
+                raise requests.HTTPError(f"HTTP {error.status}", response=response) from None
+            raise
 
     def fetch_events(self, days_ahead: int, max_results: int) -> list[CalendarEvent]:
         try:
             raw = self.fetch_raw()
+        except fetch_budget.BudgetSpent:
+            log.warning("Skipping %s: refresh fetch budget exhausted", self._log_label)
+            return []
         except Exception as e:
-            log.warning("Could not reach %s: %s", self._log_label, e)
+            log.warning("Could not reach %s (%s)", self._log_label, type(e).__name__)
             return []
 
         try:
@@ -129,5 +159,5 @@ class ICSRepository:
                 name=self._name,
             )
         except Exception as e:
-            log.warning("Could not parse %s: %s", self._log_label, e)
+            log.warning("Could not parse %s (%s)", self._log_label, type(e).__name__)
             return []

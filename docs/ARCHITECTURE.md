@@ -148,7 +148,7 @@ flowchart TB
   BOOT --> TIMER
   W -->|"start_units()<br/>systemctl start --no-block"| COND{"Feeds file exists<br/>and no links waiting?"}
   COND -->|"no"| F["epd-feed-setup.service<br/>user · 900 s<br/>main --display"]
-  COND -->|"yes"| G["gcal-epd.service<br/>user · 120 s<br/>main --display --no-setup"]
+  COND -->|"yes"| G["gcal-epd.service<br/>user · 3 min<br/>main --display --no-setup"]
   TIMER(["gcal-epd.timer<br/>07:00 / 19:00 Asia/Taipei<br/>catches up a missed run at boot"]) --> G
   F -->|"links work / saved"| PANEL[["Panel: calendar"]]
   F -->|"a link fails"| ERRQ[["Panel: setup QR + reason"]]
@@ -163,7 +163,7 @@ flowchart TB
 |---|---|---|---|---|
 | `epd-wifi-setup.service` | `wifi_setup.main()` | root | none | every boot (enabled) |
 | `epd-feed-setup.service` | `main.main()` | checkout owner | 900 s | after Wi-Fi setup, if there is no feeds file or links wait to be checked |
-| `gcal-epd.service` | `main.main() --no-setup` | checkout owner | 120 s | otherwise after Wi-Fi setup; on the timer; a missed run at boot |
+| `gcal-epd.service` | `main.main() --no-setup` | checkout owner | 3 min | otherwise after Wi-Fi setup; on the timer; a missed run at boot |
 | `gcal-epd.timer` | starts `gcal-epd.service` | — | — | 07:00 and 19:00 Asia/Taipei |
 
 - **Root is needed for two things only**: `nmcli` changes network settings,
@@ -172,7 +172,7 @@ flowchart TB
 - **`DefaultDependencies=no`** on Wi-Fi setup: while the hotspot waits for a
   person, the rest of boot (SSH included) carries on.
 - **`--no-setup`** keeps the scheduled refresh from ever waiting on the form,
-  so its 120 s limit holds.
+  so its 3-minute limit holds.
 
 ---
 

@@ -14,6 +14,7 @@ import sys
 from gcal_epd.application.display_service import run as run_display
 from gcal_epd.application.setup_service import apply_pending_feeds, run_onboarding
 from gcal_epd.config import DATA_DIR, DEFAULT_FEEDS_FILE, PROJECT_ROOT, feeds_file, load_config
+from gcal_epd.infrastructure.fetch_budget import FetchBudget
 from gcal_epd.infrastructure.feeds_file import load_feeds, pending_feeds_path, reset_feeds
 from gcal_epd.infrastructure.ics.repository import ICSRepository
 from gcal_epd.infrastructure.open_meteo.repository import OpenMeteoRepository
@@ -22,7 +23,7 @@ from gcal_epd.version import version
 log = logging.getLogger(__name__)
 
 
-def _build_event_repos(config: dict) -> list[ICSRepository]:
+def _build_event_repos(config: dict, budget: FetchBudget | None = None) -> list[ICSRepository]:
     repos: list[ICSRepository] = []
     for source in config.get("sources", []):
         if source.get("type") != "ics":
@@ -33,17 +34,18 @@ def _build_event_repos(config: dict) -> list[ICSRepository]:
             if not url:
                 log.warning("Skipping feed with no url: %s", feed.get("name", "(unnamed)"))
                 continue
-            repos.append(ICSRepository(url=url, name=feed.get("name", "")))
+            repos.append(ICSRepository(url=url, name=feed.get("name", ""), budget=budget))
     return repos
 
 
-def _build_weather_repo(config: dict) -> OpenMeteoRepository | None:
+def _build_weather_repo(config: dict, budget: FetchBudget | None = None) -> OpenMeteoRepository | None:
     for source in config.get("sources", []):
         if source.get("type") == "open_meteo":
             return OpenMeteoRepository(
                 latitude=source["latitude"],
                 longitude=source["longitude"],
                 location=source.get("location", "Taipei"),
+                budget=budget,
             )
     return None
 
@@ -130,14 +132,17 @@ def main() -> None:
     # (its unit has a short timeout; epd-feed-setup.service owns the form).
     needs_setup = (not event_repos or pending_error) and not args.no_setup
     if args.setup or args.reset or needs_setup:
-        if run_onboarding(config, push_display=args.display, error=pending_error):
-            event_repos = _build_event_repos(config)
-        else:
+        if not run_onboarding(config, push_display=args.display, error=pending_error):
             log.warning("No calendar feeds configured — rendering an empty calendar.")
+
+    # Start only after onboarding/validation; time spent on a form is not
+    # part of the calendar + weather fetch allowance for the ensuing render.
+    budget = FetchBudget()
+    event_repos = _build_event_repos(config, budget=budget)
 
     run_display(
         event_repos=event_repos,
-        weather_repo=_build_weather_repo(config),
+        weather_repo=_build_weather_repo(config, budget=budget),
         config=config,
         project_root=PROJECT_ROOT,
         push_display=args.display,

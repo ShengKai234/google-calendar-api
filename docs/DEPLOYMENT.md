@@ -7,6 +7,8 @@ release, publishing it, preparing a new SD card, and installing a release
 on a running display. Written to be followed step by step, by a person or
 by an AI agent working in this repository.
 
+Calendar and weather fetches share a 90-second refresh budget (per request: 10-second connect, 30-second read, 40-second total including the body), leaving time to draw within the refresh service’s 3-minute limit.
+
 ---
 
 ## The pieces
