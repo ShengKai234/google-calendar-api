@@ -98,3 +98,10 @@ def test_timer_defaults_match_the_default_schedule():
     timer = (DEPLOY / "gcal-epd.timer").read_text()
     times = re.findall(r"^OnCalendar=\*-\*-\* (\d\d:\d\d):00 Asia/Taipei$", timer, re.M)
     assert times == [format_slot(s) for s in DEFAULT_SLOTS]
+
+
+def test_refresh_leaves_time_for_fetching_and_drawing():
+    import configparser
+    config = configparser.ConfigParser(interpolation=None, strict=False)
+    config.read(DEPLOY / "gcal-epd.service")
+    assert config["Service"]["TimeoutStartSec"] == "3min"
