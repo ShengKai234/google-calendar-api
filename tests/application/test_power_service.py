@@ -407,6 +407,25 @@ def test_evening_update_check_from_due_to_done(tmp_path):
     assert off_at(at(19, 10))                       # done: off
 
 
+def test_update_timer_firing_mid_snapshot_keeps_it_on(tmp_path):
+    """The timer fires between the probes (review 48-3): whichever moment it
+    lands in, one snapshot must still see either the due time or the job."""
+    rig = Rig(tmp_path, now=at(19, 1), uptime=300.0)
+    rig.system.units["gcal-epd.service"] = UnitState("inactive", 120.0)   # 18:57
+    rig.system.timers["epd-update.timer"] = at(19, 1).timestamp()
+    probe = rig.system.unit_state
+
+    def fire_after_reading(unit):
+        state = probe(unit)
+        if unit == "epd-update.service":    # systemd fires the timer right now
+            rig.system.timers.pop("epd-update.timer", None)
+            rig.system.units[unit] = UnitState("inactive", None, queued=True)
+        return state
+
+    rig.system.unit_state = fire_after_reading
+    assert not decide(rig.manager.snapshot()).power_off
+
+
 def test_unknown_update_state_keeps_it_on(tmp_path):
     rig = Rig(tmp_path, now=at(7, 0), uptime=300.0)
     assert decide(rig.manager.snapshot()).power_off
