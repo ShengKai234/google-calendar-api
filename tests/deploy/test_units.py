@@ -151,7 +151,7 @@ def _setting(unit, key):
 
 
 @pytest.mark.parametrize("unit, limit", [
-    ("epd-update.service", "6min"),   # check + download + verify + build + test render
+    ("epd-update.service", "15min"),  # check + download + verify + build + test render (7-12 min seen on a Pi Zero)
     ("gcal-epd.service", "3min"),     # fetch calendars and weather + draw the panel
     ("epd-power.service", "2min"),    # its setup: clock from the RTC, schedule
 ])
