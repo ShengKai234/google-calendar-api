@@ -160,7 +160,7 @@ from step 1 (cloud-init runs `user-data` once per card).
 
    It downloads every file, checks each against `SHA256SUMS`, signs
    `SHA256SUMS` and uploads `SHA256SUMS.sig`. From then on, displays on
-   the beta channel install it at their next daily check.
+   the beta channel install it after their next refresh.
 
 4. Once it has run well on the beta display, promote it to stable; stable
    displays then install it at their next check:

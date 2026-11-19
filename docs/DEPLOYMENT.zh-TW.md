@@ -126,7 +126,7 @@ journalctl -b -u epd-wifi-setup -u gcal-epd --no-pager | tail -50
    bash deploy/release/sign.sh v0.2.0
    ```
 
-   它會下載所有檔案、逐一對照 `SHA256SUMS`、簽署 `SHA256SUMS`，並上傳 `SHA256SUMS.sig`。簽好之後，beta 頻道的裝置會在下次每日檢查時安裝它。
+   它會下載所有檔案、逐一對照 `SHA256SUMS`、簽署 `SHA256SUMS`，並上傳 `SHA256SUMS.sig`。簽好之後，beta 頻道的裝置會在下次刷新後安裝它。
 
 4. 在 beta 裝置上運作正常後，升級為 stable；stable 頻道的裝置會在下次檢查時安裝：
 
