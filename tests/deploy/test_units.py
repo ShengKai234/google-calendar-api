@@ -93,16 +93,24 @@ def test_refresh_never_shuts_down_on_its_own():
 
 
 def test_every_refresh_is_followed_by_an_update_check():
-    """No clock of its own: enabling epd-update.service hooks it onto
-    gcal-epd.service, so each refresh queues a check that runs after it."""
+    """No clock of its own: gcal-epd.service wants epd-update.service, so
+    each refresh queues a check that runs after it (After=)."""
+    refresh = (DEPLOY / "gcal-epd.service").read_text().split("[Service]", 1)[0]
+    assert re.search(r"^Wants=.*\bepd-update\.service\b", refresh, re.M)
     update = (DEPLOY / "epd-update.service").read_text()
     assert re.search(r"^After=.*\bgcal-epd\.service\b", update, re.M)
-    install = update.split("[Install]", 1)[1]
-    assert re.search(r"^WantedBy=gcal-epd\.service$", install, re.M)
     assert not (DEPLOY / "epd-update.timer").exists()
+
+
+def test_update_hook_lives_in_a_unit_file_every_installer_rewrites():
+    """Review 50-1: an enablement link (WantedBy= + systemctl enable) would
+    outlive a rollback, since an older release's install.sh never removes
+    it. The Wants= line in gcal-epd.service goes with the unit file."""
+    update = (DEPLOY / "epd-update.service").read_text()
+    assert "[Install]" not in update
     script = (DEPLOY / "install.sh").read_text()
-    assert "systemctl enable epd-update.service" in script
-    assert "enable --now epd-update.service" not in script   # never start it from an update
+    assert "enable epd-update.service" not in script
+    assert "enable --now epd-update.service" not in script
     assert "enable epd-update.timer" not in script and "start  epd-update.timer" not in script
 
 

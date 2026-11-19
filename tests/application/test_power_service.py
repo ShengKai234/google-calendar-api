@@ -390,6 +390,9 @@ def test_update_check_after_a_refresh_keeps_it_on_until_done(tmp_path):
         return decide(rig.manager.snapshot()).power_off
 
     assert not off_at(at(6, 57), UnitState("inactive", None, queued=True))
+    # Still queued after the refresh's grace (review 50-2): only the job
+    # keeps it on now, e.g. while network-online.target is still pending.
+    assert not off_at(at(7, 3), UnitState("inactive", None, queued=True))
     assert not off_at(at(7, 5), UnitState("activating", None))      # installing
     assert off_at(at(7, 6), UnitState("inactive", 600.0))          # done: off
 
