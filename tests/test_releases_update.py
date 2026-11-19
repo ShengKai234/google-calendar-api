@@ -219,13 +219,15 @@ def test_status_shows_the_state(tmp_path, key, layout, capsys):
 # --- an update stopped by its time limit (epd-update.service TimeoutStartSec)
 class StoppedRun(FakeRun):
     """systemd's SIGTERM, which releases turns into Terminated, arrives the
-    first time a command containing `word` runs."""
-    def __init__(self, word, **kw):
+    `nth` time a command containing `word` runs."""
+    def __init__(self, word, nth=1, **kw):
         super().__init__(**kw)
-        self.word, self.stopped = word, False
+        self.word, self.nth, self.seen, self.stopped = word, nth, 0, False
 
     def __call__(self, cmd, **kwargs):
         if not self.stopped and self.word in " ".join(map(str, cmd)):
+            self.seen += 1
+        if not self.stopped and self.seen == self.nth and self.word in " ".join(map(str, cmd)):
             self.stopped = True
             self.commands.append((cmd, kwargs.get("cwd")))
             raise releases.Terminated()
@@ -309,3 +311,46 @@ def test_sigterm_becomes_terminated(monkeypatch):
     releases._stop_on_sigterm()
     with pytest.raises(releases.Terminated):
         handlers[signal.SIGTERM](signal.SIGTERM, None)
+
+
+def test_stopped_while_rolling_back_an_unhealthy_release(tmp_path, key, layout):
+    """Review 50-7: the new release failed its render, and the stop lands
+    while the old units go back in: they are reinstalled once more."""
+    fetch, download = github(tmp_path, key, ("0.3.0", False))
+    units_for = []
+
+    class Watch(StoppedRun):
+        def __call__(self, cmd, **kwargs):
+            if "install.sh" in " ".join(map(str, cmd)):
+                units_for.append(layout.current())
+            return super().__call__(cmd, **kwargs)
+    with pytest.raises(releases.Terminated):
+        update(layout, Watch("install.sh", nth=2, healthy=False), fetch, download)
+    assert layout.current() == "0.2.0"
+    assert units_for == ["0.3.0", "0.2.0", "0.2.0"]   # new, rollback (stopped), again
+    assert "0.3.0" in updater.State.load(layout.data).rejected
+
+
+def test_stopped_after_a_healthy_update_keeps_it(tmp_path, key, layout):
+    """Review 50-7: the stop lands while the refresh is being started; the
+    update itself succeeded and is recorded so."""
+    fetch, download = github(tmp_path, key, ("0.3.0", False))
+    with pytest.raises(releases.Terminated):
+        update(layout, StoppedRun("systemctl"), fetch, download)
+    assert layout.current() == "0.3.0"
+    state = updater.State.load(layout.data)
+    assert state.updated_to == "0.3.0" and state.attempts == {}
+    assert state.last_result.startswith("updated 0.2.0 -> 0.3.0")
+
+
+def test_one_update_at_a_time(tmp_path, key, layout):
+    """Review 50-8: a second `releases update` (say, by hand) while one runs
+    must not clean up the first one's download."""
+    import fcntl
+    fetch, download = github(tmp_path, key, ("0.3.0", False))
+    (layout.base / ".download-busy").mkdir()
+    with open(layout.base / ".update.lock", "w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        with pytest.raises(InstallError, match="already running"):
+            update(layout, FakeRun(), fetch, download)
+    assert (layout.base / ".download-busy").exists()
