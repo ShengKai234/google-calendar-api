@@ -98,10 +98,11 @@ def _download(url: str, limit: fetch_budget.RequestLimit) -> bytes:
         if response.status_code >= 400:
             raise _http_error(response.status_code) from None
         chunks = []
-        # The refresh has an interruptible main-thread deadline. Threaded
-        # validators check each byte rather than waiting for a buffer to fill.
-        chunk_size = 64 * 1024 if threading.current_thread() is threading.main_thread() else 1
-        for chunk in response.iter_content(chunk_size=chunk_size):
+        # Main-thread refreshes also have an interruptible alarm. Threaded
+        # validators rely on socket timeouts and deadline checks between these
+        # reasonably sized chunks, so large feeds do not make millions of
+        # Python-level iterations.
+        for chunk in response.iter_content(chunk_size=64 * 1024):
             limit.remaining()
             chunks.append(chunk)
         limit.remaining()

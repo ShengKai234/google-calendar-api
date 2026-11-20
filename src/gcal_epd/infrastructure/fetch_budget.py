@@ -10,7 +10,6 @@ from contextlib import contextmanager
 import signal
 import socket
 import threading
-import threading as dns_threading
 import time
 from typing import Callable
 
@@ -80,7 +79,7 @@ def _resolve(*args, **kwargs):
     resolver = _resolver
     if limit is None:
         return resolver(*args, **kwargs)
-    done = dns_threading.Event()
+    done = threading.Event()
     result = []
 
     def lookup():
@@ -92,7 +91,10 @@ def _resolve(*args, **kwargs):
             done.set()
 
     wait = limit.connect_timeout
-    dns_threading.Thread(target=lookup, name="fetch-dns", daemon=True).start()
+    # getaddrinfo cannot be cancelled. Keep the caller bounded without joining
+    # it; a resolver that never returns can leave one daemon thread per lookup
+    # until process exit.
+    threading.Thread(target=lookup, name="fetch-dns", daemon=True).start()
     if not done.wait(wait):
         raise FetchTimeout(f"DNS lookup timed out after {wait:g} s") from None
     limit.remaining()
@@ -145,6 +147,7 @@ def _alarm_scope(limit):
         signal.setitimer(signal.ITIMER_REAL, left)
         yield
     finally:
+        # Disarm our deadline before restoring the caller's signal handler.
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, old_handler)
         if old_timer[0] > 0:
@@ -158,8 +161,11 @@ def request_scope(limit: RequestLimit):
 
     The refresh runs on the main thread, where SIGALRM can interrupt a
     buffered read (per-chunk checks alone cannot do that). In a threaded
-    validation caller, socket timeouts and streaming checks still apply.
-    DNS alone needs a daemon thread because getaddrinfo has no timeout.
+    validation caller, the connect/read socket timeouts bound stalled I/O and
+    the whole-request deadline is checked between streamed chunks. A peer that
+    continuously sends data can therefore outlast that deadline in a threaded
+    caller. DNS alone needs a daemon thread because getaddrinfo has no timeout;
+    an uninterruptible resolver can leave that daemon alive until process exit.
     """
     limit.remaining()
     # Install/remove the DNS hook outside our alarm's lifetime, so a deadline

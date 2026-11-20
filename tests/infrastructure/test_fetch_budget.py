@@ -268,12 +268,13 @@ def test_refresh_deadline_is_armed_and_restored_without_sleep(clock, monkeypatch
         with pytest.raises(fb.FetchTimeout):
             installed(None, None)
     assert ("timer", (signal.ITIMER_REAL, 4)) in calls
-    assert calls[-1] == ("handler", (signal.SIGALRM, handler))
-    assert ("timer", (signal.ITIMER_REAL, 0)) in calls
+    disarm = calls.index(("timer", (signal.ITIMER_REAL, 0)))
+    restore = calls.index(("handler", (signal.SIGALRM, handler)))
+    assert disarm < restore
+    assert restore == len(calls) - 1
 
 
 def test_dns_timeout_uses_only_daemon_thread_and_restores_resolver(clock, monkeypatch):
-    from types import SimpleNamespace
     threads = []
     class Event:
         def wait(self, timeout):
@@ -286,7 +287,8 @@ def test_dns_timeout_uses_only_daemon_thread_and_restores_resolver(clock, monkey
             threads.append(kwargs)
         def start(self):
             pass  # unresolved DNS: fake time advances only in Event.wait
-    monkeypatch.setattr(fb, "dns_threading", SimpleNamespace(Event=Event, Thread=Thread))
+    monkeypatch.setattr(fb.threading, "Event", Event)
+    monkeypatch.setattr(fb.threading, "Thread", Thread)
     resolver = socket.getaddrinfo
     with pytest.raises(fb.FetchTimeout):
         with fb.request_scope(fb.RequestLimit(seconds=4, clock=clock)):
@@ -298,7 +300,6 @@ def test_dns_timeout_uses_only_daemon_thread_and_restores_resolver(clock, monkey
 
 @pytest.mark.parametrize("fails", [False, True], ids=["resolved", "safe-error"])
 def test_dns_success_and_error_use_the_real_scoped_path(clock, monkeypatch, fails):
-    from types import SimpleNamespace
     threads = []
     class Event:
         done = False
@@ -319,7 +320,8 @@ def test_dns_success_and_error_use_the_real_scoped_path(clock, monkeypatch, fail
             raise OSError(URL)
         return expected
     monkeypatch.setattr(socket, "getaddrinfo", resolver)
-    monkeypatch.setattr(fb, "dns_threading", SimpleNamespace(Event=Event, Thread=Thread))
+    monkeypatch.setattr(fb.threading, "Event", Event)
+    monkeypatch.setattr(fb.threading, "Thread", Thread)
     with fb.request_scope(fb.RequestLimit(clock=clock)):
         if fails:
             with pytest.raises(fb.FetchFailure, match="^DNS lookup failed$"):
