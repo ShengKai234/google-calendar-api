@@ -61,7 +61,13 @@ def late_server(server, monkeypatch):
 
 def test_submission_recorded_after_the_reply_is_still_read(late_server):
     _request(late_server, {"ssid": "Home", "password": "correct-horse"})
-    assert late_server.take_pending() == ("Home", "correct-horse", [])
+    assert _submitted(late_server) == ("Home", "correct-horse", [])
+
+
+def _submitted(srv):
+    """The submission, waiting for it as the app does (handle_once)."""
+    srv.handle_once()
+    return srv.take_pending()
 
 
 # --- helpers ---
@@ -123,14 +129,14 @@ def test_post_records_credentials(server):
                                      "password": "correct-horse"})
     assert status == 200
     assert "Connecting to Home" in body
-    assert server.take_pending() == ("Home", "correct-horse", [])
+    assert _submitted(server) == ("Home", "correct-horse", [])
     assert server.take_pending() is None
 
 
 def test_post_hidden_network_uses_typed_name(server):
     _request(server, {"ssid": "__other__", "other_ssid": " Secret Net ",
                       "password": "correct-horse"})
-    assert server.take_pending() == ("Secret Net", "correct-horse", [])
+    assert _submitted(server) == ("Secret Net", "correct-horse", [])
 
 
 def test_post_short_password_is_rejected(server):
@@ -186,7 +192,7 @@ def test_post_with_calendar_links(server):
                                      "feeds": "webcal://h/a.ics\n\n https://h/b.ics "})
     assert status == 200
     assert "2 calendar link(s)" in body
-    assert server.take_pending() == ("Home", "correct-horse",
+    assert _submitted(server) == ("Home", "correct-horse",
                                      ["webcal://h/a.ics", "https://h/b.ics"])
 
 
@@ -268,7 +274,7 @@ def test_accepted_form_saves_the_times(scheduled):
     assert status == 200
     assert saved == [PowerSchedule(slots=(clock(8, 0), clock(20, 0)), enabled=True,
                                    wake_lead_minutes=9)]
-    assert srv.take_pending() == ("Home", "correct-horse", [])
+    assert _submitted(srv) == ("Home", "correct-horse", [])
 
 
 def test_times_are_saved_without_calendar_links(scheduled):
@@ -317,7 +323,7 @@ def test_a_form_without_the_section_leaves_the_schedule_alone(scheduled):
     srv, saved = scheduled()
     _request(srv, {"ssid": "Home", "password": "correct-horse"})
     assert saved == []
-    assert srv.take_pending() == ("Home", "correct-horse", [])
+    assert _submitted(srv) == ("Home", "correct-horse", [])
 
 
 def test_failed_save_does_not_block_joining(scheduled):
@@ -326,4 +332,4 @@ def test_failed_save_does_not_block_joining(scheduled):
     srv, _ = scheduled(save=broken)
     status, body = _submit(srv, _wifi_form("08:00", "20:00"))
     assert status == 200 and "Connecting to Home" in body
-    assert srv.take_pending() == ("Home", "correct-horse", [])
+    assert _submitted(srv) == ("Home", "correct-horse", [])
