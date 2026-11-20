@@ -41,6 +41,29 @@ def _request(srv, data: dict | None = None, timeout: float = 5):
         return e.code, e.read().decode()
 
 
+@pytest.fixture
+def late_server(server, monkeypatch):
+    """A server that records the submission a moment after replying.
+
+    The handler replies first on purpose (the phone must get the page
+    before the hotspot goes away), so a test that reads the submission as
+    soon as the reply arrives races the handler thread.
+    """
+    from gcal_epd.infrastructure.wifi import server as wifi_server
+    send = wifi_server._Handler._send
+
+    def send_then_pause(self, *args, **kwargs):
+        send(self, *args, **kwargs)
+        time.sleep(0.2)
+    monkeypatch.setattr(wifi_server._Handler, "_send", send_then_pause)
+    return server
+
+
+def test_submission_recorded_after_the_reply_is_still_read(late_server):
+    _request(late_server, {"ssid": "Home", "password": "correct-horse"})
+    assert late_server.take_pending() == ("Home", "correct-horse", [])
+
+
 # --- helpers ---
 
 def test_ap_ssid_shape():
