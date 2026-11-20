@@ -2,6 +2,7 @@
 import json
 import socket
 import signal
+import threading
 from unittest.mock import MagicMock
 
 import pytest
@@ -221,6 +222,37 @@ def test_stream_yields_bounded_chunks(clock, monkeypatch):
     monkeypatch.setattr(ics.requests, "get", get)
     assert ics.ICSRepository(URL, clock=clock).fetch_raw() == ICS
     get.assert_called_once()
+
+
+def test_threaded_feed_validation_streams_large_bodies_in_large_chunks(clock, monkeypatch):
+    body = b"x" * (2 * 1024 * 1024)
+    requested_chunks = []
+
+    class LargeResponse(Response):
+        def __init__(self):
+            super().__init__(clock)
+        def iter_content(self, chunk_size):
+            requested_chunks.append(chunk_size)
+            for start in range(0, len(body), chunk_size):
+                yield body[start:start + chunk_size]
+
+    monkeypatch.setattr(ics.requests, "get", MagicMock(return_value=LargeResponse()))
+    result = []
+    failures = []
+
+    def validate():
+        try:
+            result.append(ics.ICSRepository(URL, clock=clock).fetch_raw())
+        except Exception as error:
+            failures.append(error)
+
+    worker = threading.Thread(target=validate)
+    worker.start()
+    worker.join(timeout=5)
+    assert not worker.is_alive(), "threaded validation did not finish promptly"
+    assert not failures, "threaded validation failed for a healthy large feed"
+    assert result == [body]
+    assert requested_chunks and all(size >= 8 * 1024 for size in requested_chunks)
 
 
 def test_refresh_deadline_is_armed_and_restored_without_sleep(clock, monkeypatch):
