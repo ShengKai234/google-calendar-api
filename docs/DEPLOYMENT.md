@@ -122,6 +122,11 @@ setup screen, if Wi-Fi was set in Imager). From there, follow the panel; see
 [Wi-Fi setup](../README.md#wi-fi-setup) and
 [Calendar feeds](../README.md#calendar-feeds).
 
+Each calendar refresh shares a 90-second fetch budget across feeds and
+weather: at most 10 seconds to connect, 30 seconds per read, and a
+40-second request deadline including the body. Exhausted sources are
+skipped so the panel can draw the results already fetched.
+
 ### 4. If the panel stays blank
 
 Put the card back in the computer and read `epd-firstboot.log` on the boot

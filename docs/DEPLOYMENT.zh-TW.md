@@ -95,6 +95,10 @@ bash deploy/sdcard/prepare.sh --bundle dist/<label>/e-pages-<label>-sdcard.zip
 
 重新開機後，面板顯示 Wi-Fi 設定的 QR code（如果在 Imager 設了 Wi-Fi，則顯示日曆設定畫面）。接下來照面板指示操作，參考 [Wi-Fi 設定](../README.zh-TW.md#wi-fi-設定)與[日曆網址](../README.zh-TW.md#日曆網址)。
 
+每次日曆刷新時，所有日曆與天氣共用 90 秒抓取預算：連線最多 10 秒、
+每次讀取最多 30 秒、含本文的請求期限為 40 秒。預算用完便跳過剩餘來源，
+讓面板畫出已抓到的結果。
+
 ### 4. 面板一直空白時
 
 把卡插回電腦，讀開機分割區上的 `epd-firstboot.log`：最後一行會是 `=== done`，或是 `FAILED ... at line N`。用 SSH 的話：

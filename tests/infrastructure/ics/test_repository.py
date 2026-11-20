@@ -214,9 +214,12 @@ def test_empty_calendar_yields_no_events():
 
 # --- failure handling ---
 
+
 def _response(content: bytes = b"", status: int = 200):
     r = MagicMock()
     r.content = content
+    r.status_code = status
+    r.iter_content.return_value = iter([content])
     r.raise_for_status = MagicMock()
     if status >= 400:
         r.raise_for_status.side_effect = Exception(f"HTTP {status}")
@@ -260,8 +263,8 @@ def test_one_feed_failing_does_not_raise(mock_get):
 def test_request_is_sent_with_a_timeout(mock_get):
     """A hung feed must not block the display refresh forever."""
     mock_get.return_value = _response(_feed())
-    ICSRepository("https://host/a.ics", timeout=7).fetch_events(14, 100)
-    assert mock_get.call_args.kwargs["timeout"] == 7
+    ICSRepository("https://host/a.ics", timeout=7, clock=lambda: 0).fetch_events(14, 100)
+    assert mock_get.call_args.kwargs["timeout"] == (7, 7)
 
 
 # --- the feed URL is a secret ---

@@ -101,12 +101,16 @@ def inspect_feed(url: str, timeout: int = 20) -> tuple[int, str]:
         normalize_feed_url,
     )
 
-    host = urlsplit(normalize_feed_url(url)).netloc or "that link"
+    from gcal_epd.infrastructure.fetch_budget import FetchFailure, FetchTimeout
+
+    host = urlsplit(normalize_feed_url(url)).hostname or "that link"
     try:
         raw = ICSRepository(url=url, timeout=timeout).fetch_raw()
     except requests.HTTPError as e:
         code = e.response.status_code if e.response is not None else "an error"
         return 0, f"The calendar at {host} answered {code}."
+    except (FetchFailure, FetchTimeout) as error:
+        return 0, f"Could not download the calendar from {host}: {error}."
     except Exception:
         return 0, f"Could not download the calendar from {host}."
     try:

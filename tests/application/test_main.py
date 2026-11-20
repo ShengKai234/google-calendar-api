@@ -9,8 +9,8 @@ def harness(monkeypatch, tmp_path):
     calls = {"onboarding": 0, "display": 0, "error": None, "repos": []}
     monkeypatch.setattr(main_mod, "load_config", lambda: {})
     monkeypatch.setattr(main_mod, "feeds_file", lambda config: tmp_path / "ics_feeds.toml")
-    monkeypatch.setattr(main_mod, "_build_event_repos", lambda config: calls["repos"])
-    monkeypatch.setattr(main_mod, "_build_weather_repo", lambda config: None)
+    monkeypatch.setattr(main_mod, "_build_event_repos", lambda config, budget=None: calls["repos"])
+    monkeypatch.setattr(main_mod, "_build_weather_repo", lambda config, budget=None: None)
 
     def onboarding(config, push_display, error=""):
         calls["onboarding"] += 1
@@ -38,7 +38,7 @@ def test_no_feeds_opens_the_setup_form(harness):
 
 
 def test_no_setup_never_waits_on_the_form(harness):
-    """The timer's unit has a 120 s timeout; a 10 min form would be killed."""
+    """The timer's unit has a 3 min timeout; a 10 min form would be killed."""
     calls = harness("--no-setup")
     assert calls["onboarding"] == 0
     assert calls["display"] == 1
@@ -82,3 +82,55 @@ def test_scheduled_refresh_never_waits_even_on_a_failed_link(harness, monkeypatc
     _park(harness.tmp)
     monkeypatch.setattr(main_mod, "apply_pending_feeds", lambda p, f: "broken")
     assert harness("--no-setup")["onboarding"] == 0
+
+
+def test_refresh_builds_one_budget_after_onboarding(monkeypatch, tmp_path):
+    from gcal_epd.infrastructure.fetch_budget import FetchBudget
+    events = []
+    builds = []
+    budgets = []
+    monkeypatch.setattr(main_mod, "load_config", lambda: {})
+    monkeypatch.setattr(main_mod, "feeds_file", lambda config: tmp_path / "absent.toml")
+    monkeypatch.setattr("sys.argv", ["gcal-epd", "--setup"])
+    ready = [False]
+
+    def setup(*args, **kwargs):
+        ready[0] = True
+        return True
+
+    def make_budget():
+        assert ready[0], "the form must not consume the refresh's time budget"
+        b = FetchBudget()
+        budgets.append(b)
+        return b
+
+    def repos(config, budget=None):
+        builds.append(budget)
+        return events
+
+    def weather(config, budget=None):
+        assert budget is budgets[0]
+        return None
+
+    monkeypatch.setattr(main_mod, "FetchBudget", make_budget)
+    monkeypatch.setattr(main_mod, "_build_event_repos", repos)
+    monkeypatch.setattr(main_mod, "_build_weather_repo", weather)
+    monkeypatch.setattr(main_mod, "run_onboarding", setup)
+    monkeypatch.setattr(main_mod, "run_display", lambda **kwargs: None)
+    main_mod.main()
+    assert len(budgets) == 1 and builds[-1] is budgets[0]
+
+
+def test_builders_pass_the_same_budget_to_both_transports(monkeypatch):
+    from gcal_epd.infrastructure.fetch_budget import FetchBudget
+    from unittest.mock import MagicMock
+    budget = FetchBudget()
+    config = {"sources": [{"type": "ics"}, {"type": "open_meteo", "latitude": 0, "longitude": 0}]}
+    monkeypatch.setattr(main_mod, "load_feeds", lambda p: [{"url": "https://calendar.example.test/sample", "name": "Home"}])
+    calendar, weather = MagicMock(), MagicMock()
+    monkeypatch.setattr(main_mod, "ICSRepository", calendar)
+    monkeypatch.setattr(main_mod, "OpenMeteoRepository", weather)
+    main_mod._build_event_repos(config, budget=budget)
+    main_mod._build_weather_repo(config, budget=budget)
+    assert calendar.call_args.kwargs["budget"] is budget
+    assert weather.call_args.kwargs["budget"] is budget

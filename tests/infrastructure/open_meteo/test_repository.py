@@ -16,11 +16,7 @@ from gcal_epd.infrastructure.open_meteo.repository import (
 def _fake_response(payload: dict):
     """Return a mock context-manager that yields a readable response."""
     raw = json.dumps(payload).encode()
-    mock_resp = MagicMock()
-    mock_resp.read.return_value = raw
-    mock_resp.__enter__ = lambda s: s
-    mock_resp.__exit__ = MagicMock(return_value=False)
-    return mock_resp
+    return BytesIO(raw)
 
 
 _CLEAR_PAYLOAD = {
