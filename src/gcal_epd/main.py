@@ -10,6 +10,7 @@ display_service, the feeds file in infrastructure/feeds_file.
 import argparse
 import logging
 import sys
+from typing import Callable
 
 from gcal_epd.application.display_service import run as run_display
 from gcal_epd.application.setup_service import apply_pending_feeds, run_onboarding
@@ -25,9 +26,11 @@ log = logging.getLogger(__name__)
 
 
 def _build_event_repos(config: dict, budget: FetchBudget | None = None,
-                       privacy: bool = False) -> list[ICSRepository]:
-    """One repository per feed. With `privacy` (the privacy page is on), a
-    bad feed is logged without its calendar's name."""
+                       is_private: Callable[[], bool] | None = None) -> list[ICSRepository]:
+    """One repository per feed. While `is_private()` (the privacy page is
+    on), a bad feed is logged without its calendar's name; each feed asks
+    again when it logs, since a press may land mid-download."""
+    private = is_private or (lambda: False)
     repos: list[ICSRepository] = []
     for source in config.get("sources", []):
         if source.get("type") != "ics":
@@ -37,10 +40,11 @@ def _build_event_repos(config: dict, budget: FetchBudget | None = None,
             url = feed.get("url", "")
             if not url:
                 log.warning("Skipping feed with no url: %s",
-                            "(name hidden: privacy page)" if privacy
+                            "(name hidden: privacy page)" if private()
                             else feed.get("name", "(unnamed)"))
                 continue
-            repos.append(ICSRepository(url=url, name=feed.get("name", ""), budget=budget))
+            repos.append(ICSRepository(url=url, name=feed.get("name", ""), budget=budget,
+                                       hide_name=is_private))
     return repos
 
 
@@ -120,7 +124,11 @@ def main(argv: list[str] | None = None) -> None:
     # The privacy page (PiSugar button, single press): no events are fetched
     # or drawn, and calendar names stay out of the log.
     mode_file = DATA_DIR / MODE_FILE
-    privacy = load_mode(mode_file) == PRIVACY
+
+    def is_private() -> bool:
+        return load_mode(mode_file) == PRIVACY
+
+    privacy = is_private()
 
     if args.reset and not _confirm_reset(config, assume_yes=args.yes):
         log.info("Reset cancelled — feeds left untouched.")
@@ -135,7 +143,7 @@ def main(argv: list[str] | None = None) -> None:
         if pending_error:
             log.warning("Calendar links from Wi-Fi setup failed: %s", pending_error)
 
-    event_repos = _build_event_repos(config, privacy=privacy)
+    event_repos = _build_event_repos(config, is_private=is_private)
 
     # With no feeds there is nothing to show, so onboarding runs on its own —
     # unless this is the scheduled refresh, which must not wait on a person
@@ -148,7 +156,8 @@ def main(argv: list[str] | None = None) -> None:
     # Start only after onboarding/validation; time spent on a form is not
     # part of the calendar + weather fetch allowance for the ensuing render.
     budget = FetchBudget()
-    event_repos = [] if privacy else _build_event_repos(config, budget=budget)
+    event_repos = [] if privacy else _build_event_repos(config, budget=budget,
+                                                        is_private=is_private)
 
     run_display(
         event_repos=event_repos,
@@ -160,7 +169,7 @@ def main(argv: list[str] | None = None) -> None:
         privacy=privacy,
         # Looked at again just before drawing: a press may have switched
         # to the privacy page while the calendars were being fetched.
-        is_private=lambda: load_mode(mode_file) == PRIVACY,
+        is_private=is_private,
     )
 
 

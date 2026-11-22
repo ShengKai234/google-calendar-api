@@ -10,6 +10,7 @@ import datetime
 import logging
 import time
 import threading
+from typing import Callable
 from urllib.parse import urlsplit
 
 import icalendar
@@ -120,9 +121,11 @@ class ICSRepository:
 
     def __init__(self, url: str, name: str = "", timeout: float = DEFAULT_REQUEST_TIMEOUT,
                  *, budget: fetch_budget.FetchBudget | None = None,
-                 clock=time.monotonic) -> None:
+                 clock=time.monotonic,
+                 hide_name: Callable[[], bool] | None = None) -> None:
         self._url = normalize_feed_url(url)
         self._name = name
+        self._hide_name = hide_name
         self._request_timeout = timeout
         self._budget = budget
         self._clock = clock
@@ -133,11 +136,15 @@ class ICSRepository:
 
         The feed URL embeds a private token and these logs land in the
         systemd journal, so a feed is only ever identified by name and host.
+        While `hide_name()` says so (the privacy page is on, asked each time:
+        it may have been switched on mid-download), by host alone.
         """
         try:
             host = urlsplit(self._url).hostname or "unknown host"
         except ValueError:
             host = "unknown host"
+        if self._hide_name is not None and self._hide_name():
+            return f"a calendar ({host})"
         return f"{self._name or 'feed'} ({host})"
 
     def fetch_raw(self) -> bytes:

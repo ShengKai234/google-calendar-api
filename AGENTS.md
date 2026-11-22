@@ -66,4 +66,7 @@ everything about installing it.
   panel takes `DATA_DIR/panel.lock` (infrastructure/panel_lock.py).
   Single press: privacy page on/off (`DATA_DIR/display_mode.toml`; an
   unreadable file means privacy; no events are fetched while it is on).
+  The switch takes the panel lock too, and a refresh rechecks the mode
+  under it before drawing, so a calendar fetched before a press is never
+  drawn after it. A feed checks it again before logging its name.
   Double press: redraw what is showing.

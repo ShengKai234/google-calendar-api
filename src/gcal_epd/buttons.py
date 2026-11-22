@@ -20,6 +20,8 @@ import argparse
 import logging
 from pathlib import Path
 
+from gcal_epd.infrastructure.panel_lock import PANEL_LOCK, panel_lock
+
 log = logging.getLogger(__name__)
 
 # gesture -> action
@@ -51,9 +53,16 @@ def mode_file() -> Path:
 
 def privacy() -> None:
     """Show the other page, then draw it. A double press never undoes the
-    privacy page: only this does."""
-    from gcal_epd.infrastructure.display_mode_file import toggle
-    log.info("Button: showing the %s page.", toggle(mode_file()))
+    privacy page: only this does.
+
+    The switch takes the panel lock: a refresh looks at the mode and draws
+    in one hold of it, so the switch lands before that look or after the
+    push, never between them (review 56-1). The redraw takes it again."""
+    from gcal_epd.infrastructure import display_mode_file as dm
+    path = mode_file()
+    with panel_lock(path.parent / PANEL_LOCK):
+        page = dm.toggle(path)
+    log.info("Button: showing the %s page.", page)
     refresh()
 
 

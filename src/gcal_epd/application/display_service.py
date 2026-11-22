@@ -30,8 +30,10 @@ def run(
     weather, and no events fetched at all.
 
     `is_private` is asked once more just before drawing, while the panel
-    lock is held: a single press switches the mode and then waits for the
-    panel, so a calendar fetched before the press is never drawn after it.
+    lock is held; a single press switches the mode under the same lock
+    (gcal_epd.buttons), so a calendar fetched before the press is never
+    drawn, saved or pushed after it. The lock is taken for a push, and
+    also for a preview whenever the mode can change.
     """
     output_path = _output_path(config, project_root if data_dir is None else data_dir)
     font = font_path(config, project_root)
@@ -52,7 +54,8 @@ def run(
 
     weather = weather_repo.fetch_weather() if weather_repo else None
 
-    lock = panel_lock((data_dir or DATA_DIR) / PANEL_LOCK) if push_display else nullcontext()
+    locked = push_display or is_private is not None
+    lock = panel_lock((data_dir or DATA_DIR) / PANEL_LOCK) if locked else nullcontext()
     with lock:
         if not privacy and is_private is not None and is_private():
             log.info("Switched to the privacy page meanwhile: drawing that instead.")
