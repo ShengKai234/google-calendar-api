@@ -186,8 +186,10 @@ def test_run_push_display_calls_epd(mock_render, tmp_path):
             config=_CONFIG,
             project_root=tmp_path,
             push_display=True,
+            data_dir=tmp_path,
         )
-        mock_epd_push.assert_called_once_with(fake_img, (0, 0))
+        # The panel lock is already held by run() (review 56-1).
+        mock_epd_push.assert_called_once_with(fake_img, (0, 0), take_lock=False)
 
 
 @patch("gcal_epd.application.display_service.render")
@@ -198,8 +200,8 @@ def test_run_push_display_passes_the_frame_offset(mock_render, tmp_path):
     config = {**_CONFIG, "display": {**_CONFIG.get("display", {}), "frame_offset_px": [3, -2]}}
     with patch("gcal_epd.epd.push_to_display") as mock_epd_push:
         run(event_repos=[_make_event_repo()], weather_repo=None, config=config,
-            project_root=tmp_path, push_display=True)
-    mock_epd_push.assert_called_once_with(mock_render.return_value, (3, -2))
+            project_root=tmp_path, push_display=True, data_dir=tmp_path)
+    mock_epd_push.assert_called_once_with(mock_render.return_value, (3, -2), take_lock=False)
 
 
 @patch("gcal_epd.application.display_service.render")

@@ -105,7 +105,7 @@ def test_refresh_builds_one_budget_after_onboarding(monkeypatch, tmp_path):
         budgets.append(b)
         return b
 
-    def repos(config, budget=None):
+    def repos(config, budget=None, privacy=False):
         builds.append(budget)
         return events
 

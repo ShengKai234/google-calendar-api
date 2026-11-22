@@ -25,21 +25,29 @@ MODES = (CALENDAR, PRIVACY)
 
 
 def load_mode(path: Path) -> str:
+    """The page to show. Only a path with nothing at all there means the
+    calendar; anything there that does not say which page means privacy.
+    The file's contents are never logged: a corrupted file may hold anything.
+    """
     try:
-        text = path.read_text()
+        data = path.read_bytes()
     except FileNotFoundError:
+        if path.is_symlink():   # a link to nothing: something is there
+            log.warning("%s is a broken link: showing the privacy page.", path.name)
+            return PRIVACY
         return CALENDAR
     except OSError as e:
-        log.warning("Cannot read %s (%s): showing the privacy page.", path.name, e)
+        log.warning("Cannot read %s (%s): showing the privacy page.",
+                    path.name, type(e).__name__)
         return PRIVACY
     try:
-        mode = tomllib.loads(text).get("mode")
-    except tomllib.TOMLDecodeError as e:
-        log.warning("%s is not valid TOML (%s): showing the privacy page.", path.name, e)
+        mode = tomllib.loads(data.decode()).get("mode")
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError):
+        log.warning("%s is not valid TOML: showing the privacy page.", path.name)
         return PRIVACY
     if mode not in MODES:
-        log.warning("%s has mode %r, not one of %s: showing the privacy page.",
-                    path.name, mode, ", ".join(MODES))
+        log.warning("%s names no known page (%s): showing the privacy page.",
+                    path.name, ", ".join(MODES))
         return PRIVACY
     return mode
 
