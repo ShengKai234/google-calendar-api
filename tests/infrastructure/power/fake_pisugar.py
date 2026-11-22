@@ -26,6 +26,8 @@ class FakePiSugarServer:
         self.errors: dict[str, str] = {}  # command name -> error text
         self.commands: list[str] = []
         self.system_time_set = None
+        self.button_enable: dict[str, bool] = {}
+        self.button_shell: dict[str, str] = {}
 
     def __call__(self, command: str) -> str:
         if not self.up:
@@ -51,6 +53,12 @@ class FakePiSugarServer:
                 self.alarm = (when.hour, when.minute, when.second)
                 self.alarm_enabled = True
                 self.repeat = int(parts[2])
+            return f"{name}: done"
+        if name == "set_button_enable":
+            self.button_enable[parts[1]] = parts[2] in ("1", "true")
+            return f"{name}: done"
+        if name == "set_button_shell":
+            self.button_shell[parts[1]] = " ".join(parts[2:])  # as cmds.rs joins them
             return f"{name}: done"
         if name == "rtc_pi2rtc":
             return f"{name}: done"

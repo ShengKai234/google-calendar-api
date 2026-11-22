@@ -154,6 +154,7 @@ def _setting(unit, key):
     ("epd-update.service", "15min"),  # check + download + verify + build + test render (7-12 min seen on a Pi Zero)
     ("gcal-epd.service", "3min"),     # fetch calendars and weather + draw the panel
     ("epd-power.service", "2min"),    # its setup: clock from the RTC, schedule
+    ("epd-button@.service", "3min"),  # a button action: at most one refresh
 ])
 def test_each_unit_has_its_own_run_time_limit(unit, limit):
     """A unit that hangs while running would keep a battery Pi on until it is
@@ -185,3 +186,32 @@ def test_timer_defaults_match_the_default_schedule():
     timer = (DEPLOY / "gcal-epd.timer").read_text()
     times = re.findall(r"^OnCalendar=\*-\*-\* (\d\d:\d\d):00 Asia/Taipei$", timer, re.M)
     assert times == [format_slot(s) for s in DEFAULT_SLOTS]
+
+
+# --- PiSugar button ----------------------------------------------------
+def test_button_actions_run_the_app_as_its_user():
+    """pisugar-server runs button commands as root; it only starts this unit,
+    and the unit runs the app's own code as the app's user."""
+    assert _setting("epd-button@.service", "Type") == "oneshot"
+    assert _setting("epd-button@.service", "User") == "@USER@"
+    assert _setting("epd-button@.service", "ExecStart") == \
+        "@PROJECT_DIR@/.venv/bin/python -m gcal_epd.buttons %i"
+
+
+def test_button_actions_wait_for_setup_like_the_refresh():
+    """No calendars yet, or links waiting to be checked: the setup screen is
+    showing, and a press must not draw over it."""
+    unit = (DEPLOY / "epd-button@.service").read_text()
+    assert "ConditionPathExists=@FEEDS_FILE@" in unit
+    assert "ConditionPathExists=!@PENDING_FILE@" in unit
+
+
+def test_a_button_refresh_does_not_wait_for_an_update():
+    """A press should redraw now, not after an update that may take 12 min."""
+    unit = (DEPLOY / "epd-button@.service").read_text()
+    assert "epd-update" not in unit
+
+
+def test_install_sets_up_the_pisugar_buttons():
+    script = (DEPLOY / "install.sh").read_text()
+    assert "gcal_epd.power_manager buttons" in script

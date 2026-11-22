@@ -47,6 +47,8 @@ class FakeSystem:
             "gcal-epd.service": UnitState("inactive", 130.0),
             "epd-feed-setup.service": UnitState("inactive", None),
             "epd-update.service": UnitState("inactive", None),
+            "epd-button@refresh.service": UnitState("inactive", None),
+            "epd-button@privacy.service": UnitState("inactive", None),
         }
         self.ntp = False
         self.sessions = 0
@@ -441,3 +443,20 @@ def test_a_refresh_stopped_by_its_time_limit_powers_off_normally(tmp_path):
     rig.t, rig.mono = at(7, 1), 360.0
     assert decide(rig.manager.snapshot()).power_off
     assert rig.manager.run() == "powered-off"
+
+
+# --- button actions ----------------------------------------------------
+@pytest.mark.parametrize("unit", ["epd-button@refresh.service",
+                                  "epd-button@privacy.service"])
+def test_a_button_action_keeps_it_on_then_grace(tmp_path, unit):
+    """A press redraws the panel: the Pi stays on while it runs, and the
+    grace period counts from when it ended."""
+    rig = Rig(tmp_path, now=at(7, 0), uptime=300.0)
+    assert decide(rig.manager.snapshot()).power_off
+    rig.system.units[unit] = UnitState("activating", None)
+    d = decide(rig.manager.snapshot())
+    assert not d.power_off and unit in d.reason
+    rig.system.units[unit] = UnitState("inactive", 290.0)                # 06:59:50
+    assert not decide(rig.manager.snapshot()).power_off                  # grace
+    rig.t, rig.mono = at(7, 2), 420.0
+    assert decide(rig.manager.snapshot()).power_off
