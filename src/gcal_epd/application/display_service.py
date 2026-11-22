@@ -3,7 +3,7 @@ from pathlib import Path
 
 from gcal_epd.config import font_path, output_path as _output_path
 from gcal_epd.domain.repositories import EventRepository, WeatherRepository
-from gcal_epd.render.draw import render
+from gcal_epd.render.draw import render, render_privacy
 from gcal_epd.version import version
 
 log = logging.getLogger(__name__)
@@ -16,12 +16,14 @@ def run(
     project_root: Path,
     push_display: bool = False,
     data_dir: Path | None = None,
+    privacy: bool = False,
 ) -> None:
     """Fetch, render and (optionally) push to the panel.
 
     Fonts come from `project_root` (the code); the preview is written to
     `data_dir` (this display's files), which defaults to `project_root`
-    as in a git checkout.
+    as in a git checkout. With `privacy`, the privacy page: date and
+    weather, and no events fetched at all.
     """
     output_path = _output_path(config, project_root if data_dir is None else data_dir)
     font = font_path(config, project_root)
@@ -32,6 +34,14 @@ def run(
     )
     days_ahead = source_cfg.get("days_ahead", 14)
     max_results = source_cfg.get("max_results_per_calendar", 100)
+
+    if privacy:
+        weather = weather_repo.fetch_weather() if weather_repo else None
+        img = render_privacy(weather=weather, output_path=output_path, font_path=font,
+                             version=version(project_root))
+        log.info("Privacy page; preview saved to %s", output_path)
+        _push(img, config, push_display)
+        return
 
     all_events = []
     for repo in event_repos:
@@ -44,7 +54,10 @@ def run(
     img = render(all_events, weather=weather, output_path=output_path, font_path=font,
                  version=version(project_root))
     log.info("Preview saved to %s", output_path)
+    _push(img, config, push_display)
 
+
+def _push(img, config: dict, push_display: bool) -> None:
     if push_display:
         from gcal_epd.epd import push_to_display
         from gcal_epd.render.frame import frame_offset

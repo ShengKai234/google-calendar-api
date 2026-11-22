@@ -358,6 +358,75 @@ def render(
     return img
 
 
+def render_privacy(
+    weather: WeatherInfo | None = None,
+    output_path: str = "preview.png",
+    font_path: str = "",
+    version: str = "",
+    now: datetime.datetime | None = None,
+) -> Image.Image:
+    """The privacy page: today's date and weather, nothing else.
+
+    Shown instead of the calendar while guests are over (a single press of
+    the PiSugar button). It is never given the events, and leaves out the
+    weather's location label, so nothing personal is on the panel.
+    """
+    img = Image.new("RGB", (WIDTH, HEIGHT), BG)
+    draw = ImageDraw.Draw(img)
+    now = now or datetime.datetime.now(TW_TZ)
+
+    fonts = {
+        "date": _load_font(font_path, 120),
+        "weekday": _load_font(font_path, 36),
+        "temp": _load_font(font_path, 30),
+        "metric": _load_font(font_path, 24),
+        "footer": _load_font(font_path, 13),
+    }
+    cx = WIDTH / 2
+
+    # Big date and the weekday under it, centred above the middle.
+    date_str = f"{now.month:02d}/{now.day:02d}"
+    _text(draw, (cx, HEIGHT * 0.33), date_str, fonts["date"], FG, anchor="mm", bold=3)
+    _text(draw, (cx, HEIGHT * 0.55), format_weekday(now.date()), fonts["weekday"], FG,
+          anchor="mm")
+
+    if weather:
+        # One centred line: pictogram, temperature and condition, then
+        # humidity and rain chance.
+        y = HEIGHT * 0.75
+        icon = 48
+        gap, metric_gap, small = 12, 22, 24
+        line = f"{weather.temperature:.0f}°C {weather.condition}"
+        hum = f"{weather.humidity}%"
+        pop = f"{weather.precipitation_probability}%"
+        kind = _CONDITION_ICON.get(weather.condition, "")
+        total = (
+            (icon + gap if kind else 0)
+            + _textw(draw, line, fonts["temp"], bold=1) + metric_gap
+            + small + 5 + _textw(draw, hum, fonts["metric"]) + metric_gap
+            + small + 5 + _textw(draw, pop, fonts["metric"])
+        )
+        x = cx - total / 2
+        if kind:
+            _draw_weather_icon(draw, kind, x, y - icon / 2, icon)
+            x += icon + gap
+        _text(draw, (x, y), line, fonts["temp"], FG, anchor="lm", bold=1)
+        x += _textw(draw, line, fonts["temp"], bold=1) + metric_gap
+        _draw_droplet(draw, x + small / 2, y, small, ACCENT)
+        x += small + 5
+        _text(draw, (x, y), hum, fonts["metric"], FG, anchor="lm")
+        x += _textw(draw, hum, fonts["metric"]) + metric_gap
+        _draw_umbrella(draw, x + small / 2, y, small, ACCENT)
+        x += small + 5
+        _text(draw, (x, y), pop, fonts["metric"], FG, anchor="lm")
+
+    _draw_footer(draw, fonts, now, version)
+
+    if output_path:
+        img.save(output_path)
+    return img
+
+
 def render_setup(
     setup_url: str,
     pin: str = "",

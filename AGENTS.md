@@ -64,3 +64,6 @@ everything about installing it.
   `systemctl start --no-block epd-button@<action>.service`
   (gcal_epd.buttons; set up by `power_manager buttons`). Every push to the
   panel takes `DATA_DIR/panel.lock` (infrastructure/panel_lock.py).
+  Single press: privacy page on/off (`DATA_DIR/display_mode.toml`; an
+  unreadable file means privacy; no events are fetched while it is on).
+  Double press: redraw what is showing.

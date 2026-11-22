@@ -189,9 +189,14 @@ OnCalendar=*-*-* 19:00:00 Asia/Taipei
 
 | 按法 | 作用 |
 |---|---|
-| 按兩下 | 立刻重畫日曆：抓日曆與天氣並畫出來，不用等下一個排程時間 |
+| 按一下 | 在日曆和**隱私頁**之間切換：隱私頁只有今天的日期和天氣，沒有行程，適合有客人來時使用 |
+| 按兩下 | 立刻重畫目前顯示的頁面：日曆（重新抓取），或開著隱私頁時就重畫隱私頁 |
 
-按下後約 30 秒畫面才會變：7 色面板完整刷新一次就要這麼久。動作進行中再按會被忽略。Pi 關機時自訂按鈕沒有作用：先用電源鍵開機（按一下再長按），開機時會畫出日曆。
+按下後約 30 秒畫面才會變：7 色面板完整刷新一次就要這麼久。動作進行中再按會被忽略。
+
+隱私頁會一直保留到下一次按一下：期間每次刷新（排程時間或開機）都會再畫隱私頁，按兩下也不會讓行程重新出現。隱私頁開著時完全不會抓日曆。狀態存在資料夾裡的 `display_mode.toml`；從 SSH 刪掉這個檔案就會回到日曆。
+
+Pi 關機時自訂按鈕沒有作用：先用電源鍵開機（按一下再長按）；開機時會重畫畫面（隱私頁開著就畫隱私頁），之後自訂按鈕就能用了。
 
 `bash deploy/install.sh` 會在 pisugar-server 裡設定好；要重新設定（例如重裝 pisugar-server 之後）：
 `sudo /opt/e-pages/current/.venv/bin/python -m gcal_epd.power_manager buttons`。
@@ -314,6 +319,7 @@ google-calendar-api/
 │   ├── infrastructure/
 │   │   ├── feeds_file.py    # 讀／寫／重置 ics_feeds.toml
 │   │   ├── panel_lock.py    # 一次只讓一個程序畫面板
+│   │   ├── display_mode_file.py  # 日曆或隱私頁（display_mode.toml）
 │   │   ├── ics/             # iCalendar 日曆來源
 │   │   ├── open_meteo/      # 天氣來源
 │   │   ├── onboarding/      # 日曆設定網頁表單（家裡網路，需 PIN）

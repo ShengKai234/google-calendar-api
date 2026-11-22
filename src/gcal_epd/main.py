@@ -14,6 +14,7 @@ import sys
 from gcal_epd.application.display_service import run as run_display
 from gcal_epd.application.setup_service import apply_pending_feeds, run_onboarding
 from gcal_epd.config import DATA_DIR, DEFAULT_FEEDS_FILE, PROJECT_ROOT, feeds_file, load_config
+from gcal_epd.infrastructure.display_mode_file import MODE_FILE, PRIVACY, load_mode
 from gcal_epd.infrastructure.fetch_budget import FetchBudget
 from gcal_epd.infrastructure.feeds_file import load_feeds, pending_feeds_path, reset_feeds
 from gcal_epd.infrastructure.ics.repository import ICSRepository
@@ -138,7 +139,10 @@ def main(argv: list[str] | None = None) -> None:
     # Start only after onboarding/validation; time spent on a form is not
     # part of the calendar + weather fetch allowance for the ensuing render.
     budget = FetchBudget()
-    event_repos = _build_event_repos(config, budget=budget)
+    # The privacy page (PiSugar button, single press) shows no events, so
+    # none are fetched while it is on.
+    privacy = load_mode(DATA_DIR / MODE_FILE) == PRIVACY
+    event_repos = [] if privacy else _build_event_repos(config, budget=budget)
 
     run_display(
         event_repos=event_repos,
@@ -147,6 +151,7 @@ def main(argv: list[str] | None = None) -> None:
         project_root=PROJECT_ROOT,
         push_display=args.display,
         data_dir=DATA_DIR,
+        privacy=privacy,
     )
 
 

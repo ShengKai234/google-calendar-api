@@ -248,12 +248,21 @@ display while the Pi is on:
 
 | Press | Does |
 |---|---|
-| double | redraws the calendar now: fetches the calendars and weather and draws them, without waiting for the next slot |
+| single | switches between the calendar and the **privacy page**: today's date and weather, with no events, for when guests are over |
+| double | redraws what is showing now: the calendar (fetched again), or the privacy page while that is on |
 
 The panel changes about 30 s after the press: a full refresh of the
 7-colour panel takes that long. A press while an action runs is ignored.
+
+The privacy page stays until the next single press: every refresh in
+between, at the scheduled times or at boot, draws the privacy page again,
+and a double press never brings the events back. While it is on, the
+calendars are not fetched at all. It is kept in `display_mode.toml` in the
+data directory; delete that file to go back to the calendar from SSH.
+
 While the Pi is off, the custom button does nothing: switch it on with the
-power button (click, then hold) and it draws the calendar as it boots.
+power button (click, then hold); it redraws as it boots (the privacy page,
+if that is on), and then the custom button works.
 
 `bash deploy/install.sh` sets this up in pisugar-server; to set it up again,
 for example after reinstalling pisugar-server:
@@ -389,6 +398,7 @@ google-calendar-api/
 │   ├── infrastructure/
 │   │   ├── feeds_file.py    # Read / write / reset ics_feeds.toml
 │   │   ├── panel_lock.py    # One process draws on the panel at a time
+│   │   ├── display_mode_file.py  # Calendar or privacy page (display_mode.toml)
 │   │   ├── ics/             # iCalendar feed repository
 │   │   ├── open_meteo/      # Weather repository
 │   │   ├── onboarding/      # Calendar setup web form (LAN, PIN)
