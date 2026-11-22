@@ -221,3 +221,23 @@ def test_preview_defaults_to_the_checkout(mock_render, tmp_path):
     run(event_repos=[], weather_repo=None, config=_CONFIG, project_root=tmp_path)
 
     assert mock_render.call_args.kwargs["output_path"] == str(tmp_path / "preview.png")
+
+
+# --- the privacy page ---
+
+@patch("gcal_epd.application.display_service.render")
+@patch("gcal_epd.application.display_service.render_privacy")
+def test_privacy_fetches_no_events_and_draws_the_privacy_page(mock_privacy, mock_render,
+                                                              tmp_path):
+    from gcal_epd.application.display_service import run
+
+    mock_privacy.return_value = MagicMock()
+    event_repo = _make_event_repo()
+    weather_repo = _make_weather_repo()
+    run(event_repos=[event_repo], weather_repo=weather_repo, config=_CONFIG,
+        project_root=tmp_path, privacy=True)
+
+    event_repo.fetch_events.assert_not_called()
+    mock_render.assert_not_called()
+    _, kwargs = mock_privacy.call_args
+    assert kwargs["weather"] == _WEATHER

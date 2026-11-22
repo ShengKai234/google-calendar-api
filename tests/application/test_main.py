@@ -134,3 +134,28 @@ def test_builders_pass_the_same_budget_to_both_transports(monkeypatch):
     main_mod._build_weather_repo(config, budget=budget)
     assert calendar.call_args.kwargs["budget"] is budget
     assert weather.call_args.kwargs["budget"] is budget
+
+
+# --- the privacy page (PiSugar button, single press) ---
+
+def test_privacy_mode_draws_the_privacy_page_without_events(harness, monkeypatch):
+    """Every refresh (timer, boot, a double press) keeps the events hidden."""
+    from gcal_epd.infrastructure import display_mode_file as dm
+    monkeypatch.setattr(main_mod, "DATA_DIR", harness.tmp)
+    dm.save_mode(harness.tmp / dm.MODE_FILE, dm.PRIVACY)
+    harness.calls["repos"] = ["a feed"]
+    seen = {}
+    monkeypatch.setattr(main_mod, "run_display", lambda **kw: seen.update(kw))
+    harness("--display", "--no-setup")
+    assert seen["privacy"] is True
+    assert seen["event_repos"] == []
+
+
+def test_calendar_mode_draws_the_calendar(harness, monkeypatch):
+    monkeypatch.setattr(main_mod, "DATA_DIR", harness.tmp)
+    harness.calls["repos"] = ["a feed"]
+    seen = {}
+    monkeypatch.setattr(main_mod, "run_display", lambda **kw: seen.update(kw))
+    harness("--display", "--no-setup")
+    assert seen["privacy"] is False
+    assert seen["event_repos"] == ["a feed"]
