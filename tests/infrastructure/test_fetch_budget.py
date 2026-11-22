@@ -149,6 +149,23 @@ def test_errors_containing_urls_are_not_logged(failure, clock, monkeypatch, capl
         pytest.fail("unsafe feed diagnostic", pytrace=False)
 
 
+def test_a_press_during_the_download_hides_the_calendar_name(clock, monkeypatch, caplog):
+    """Review 56-5: the privacy page was switched on while this feed was
+    still downloading; its failure is then logged without its name."""
+    mode = ["calendar"]
+
+    def slow_failure(*a, **kw):
+        mode[0] = "privacy"  # the single press lands mid-download
+        raise OSError("connection reset")
+
+    monkeypatch.setattr(ics.requests, "get", MagicMock(side_effect=slow_failure))
+    repo = ics.ICSRepository(URL, name="Secret Doctor Visits", clock=clock,
+                             hide_name=lambda: mode[0] == "privacy")
+    assert repo.fetch_events(14, 10) == []
+    assert "Secret Doctor Visits" not in caplog.text
+    assert "calendar.example.test" in caplog.text
+
+
 def test_parse_errors_containing_feed_content_are_not_logged(clock, monkeypatch, caplog):
     monkeypatch.setattr(ics.requests, "get", MagicMock(return_value=Response(clock, [ICS])))
     monkeypatch.setattr(ics, "events_from_ics", MagicMock(side_effect=ValueError(URL)))

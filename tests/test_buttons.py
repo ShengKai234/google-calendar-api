@@ -47,3 +47,28 @@ def test_privacy_switches_the_page_then_redraws(monkeypatch, tmp_path):
     assert buttons.main(["privacy"]) == 0
     assert seen == [(dm.PRIVACY, ["--display", "--no-setup"]),
                     (dm.CALENDAR, ["--display", "--no-setup"])]
+
+
+def test_the_switch_waits_for_a_drawing_in_progress(monkeypatch, tmp_path):
+    """Review 56-1: a refresh looks at the mode and draws in one hold of
+    the panel lock; the switch takes the same lock, so it never lands
+    between that look and the push. The redraw comes after, unlocked."""
+    from contextlib import contextmanager
+
+    from gcal_epd.infrastructure import display_mode_file as dm
+    path = tmp_path / dm.MODE_FILE
+    monkeypatch.setattr(buttons, "mode_file", lambda: path)
+    order = []
+
+    @contextmanager
+    def lock(lock_path):
+        assert lock_path == tmp_path / buttons.PANEL_LOCK
+        order.append("lock")
+        yield
+        order.append("unlock")
+
+    monkeypatch.setattr(buttons, "panel_lock", lock)
+    monkeypatch.setattr(dm, "toggle", lambda p: order.append("toggle") or dm.PRIVACY)
+    monkeypatch.setattr("gcal_epd.main.main", lambda argv=None: order.append("redraw"))
+    assert buttons.main(["privacy"]) == 0
+    assert order == ["lock", "toggle", "unlock", "redraw"]

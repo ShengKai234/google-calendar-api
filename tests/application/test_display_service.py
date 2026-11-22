@@ -254,10 +254,35 @@ def test_a_press_during_the_fetch_wins(mock_privacy, mock_render, tmp_path):
 
     mock_privacy.return_value = MagicMock()
     run(event_repos=[_make_event_repo()], weather_repo=_make_weather_repo(), config=_CONFIG,
-        project_root=tmp_path, is_private=lambda: True)
+        project_root=tmp_path, data_dir=tmp_path, is_private=lambda: True)
 
     mock_render.assert_not_called()
     mock_privacy.assert_called_once()
+
+
+def test_a_preview_also_holds_the_lock_while_the_mode_can_change(tmp_path, monkeypatch):
+    """Review 56-1: preview.png is saved too, so it is chosen under the
+    same lock a single press takes, even without a panel."""
+    from contextlib import contextmanager
+
+    from gcal_epd.application import display_service
+
+    order = []
+
+    @contextmanager
+    def lock(path):
+        assert path == tmp_path / display_service.PANEL_LOCK
+        order.append("lock")
+        yield
+        order.append("unlock")
+
+    monkeypatch.setattr(display_service, "panel_lock", lock)
+    monkeypatch.setattr(display_service, "render",
+                        lambda *a, **kw: order.append("render") or MagicMock())
+    display_service.run(event_repos=[_make_event_repo()], weather_repo=None, config=_CONFIG,
+                        project_root=tmp_path, data_dir=tmp_path,
+                        is_private=lambda: order.append("check") or False)
+    assert order == ["lock", "check", "render", "unlock"]
 
 
 def test_the_page_is_chosen_and_pushed_under_the_panel_lock(tmp_path, monkeypatch):
