@@ -1,0 +1,27 @@
+# Template — deploy/install.sh fills in @PROJECT_DIR@, @USER@, @FEEDS_FILE@ and @PENDING_FILE@.
+# Install with that script; a copy made by hand will not start.
+[Unit]
+Description=e-Paper calendar button action (%i)
+# Started by pisugar-server when the PiSugar's custom button is pressed
+# (gcal_epd.buttons; set up by `power_manager buttons`). pisugar-server
+# runs as root, so it only starts this unit; the app runs as its user.
+# No update check first, unlike gcal-epd.service: a press redraws now.
+# Not while setup is showing its screen: no calendars yet, or links from
+# the Wi-Fi form waiting to be checked.
+ConditionPathExists=@FEEDS_FILE@
+ConditionPathExists=!@PENDING_FILE@
+# A press while the network comes up waits for it, as the timer does.
+After=network-online.target epd-wifi-setup.service epd-feed-setup.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=@USER@
+WorkingDirectory=@PROJECT_DIR@
+ExecStart=@PROJECT_DIR@/.venv/bin/python -m gcal_epd.buttons %i
+# Run-time limit, as for gcal-epd.service: at most one refresh. The panel
+# itself is shared through a lock (infrastructure/panel_lock.py).
+TimeoutStartSec=3min
+Restart=no
+StandardOutput=journal
+StandardError=journal

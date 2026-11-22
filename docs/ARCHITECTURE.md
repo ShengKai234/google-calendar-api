@@ -165,6 +165,7 @@ flowchart TB
 | `epd-feed-setup.service` | `main.main()` | checkout owner | 900 s | after Wi-Fi setup, if there is no feeds file or links wait to be checked |
 | `gcal-epd.service` | `main.main() --no-setup` | checkout owner | 120 s | otherwise after Wi-Fi setup; on the timer; a missed run at boot |
 | `gcal-epd.timer` | starts `gcal-epd.service` | — | — | 07:00 and 19:00 Asia/Taipei |
+| `epd-button@.service` | `buttons.main() <action>` | checkout owner | 3 min | started by pisugar-server (root) when the PiSugar's custom button is pressed; same conditions as the refresh, no update check |
 
 - **Root is needed for two things only**: `nmcli` changes network settings,
   and the Wi-Fi form listens on port 80. Everything calendar-related runs as

@@ -74,7 +74,7 @@ def _confirm_reset(config: dict, assume_yes: bool = False) -> bool:
     return True
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Fetch calendar feeds and render to e-ink display"
     )
@@ -104,7 +104,7 @@ def main() -> None:
         action="store_true",
         help="Never wait on the setup form, even with no feeds (for the timer)",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     # Configured here, not at import, so importing this module (tests, tools)
     # never changes the importer's logging.

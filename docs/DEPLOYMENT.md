@@ -323,6 +323,7 @@ count: the power manager bounds that.
 | `epd-update.service`: check, download, verify, build, test render | 15 min (7–12 min seen on a Pi Zero) | the Pi goes back to the release it was running (units included); counts as one failed try, and a release is given up after 3; leftovers are removed at the next check; the refresh still runs, with the old release |
 | `gcal-epd.service`: fetch calendars and weather, draw the panel | 3 min | stopped; the power manager powers off as after any refresh |
 | `epd-power.service` setup: clock from the RTC, schedule | 2 min | stopped; Wi-Fi setup and the refresh go on |
+| `epd-button@.service`: a PiSugar button action (at most one refresh) | 3 min | stopped; the power manager powers off as after any refresh |
 | a refresh or update check waiting to start | 5 min after the last unit ended (or boot) | the power manager no longer stays on for it |
 
 ### Channel

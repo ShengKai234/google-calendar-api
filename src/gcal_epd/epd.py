@@ -9,6 +9,7 @@ from pathlib import Path
 from PIL import Image
 
 from gcal_epd.config import DATA_DIR
+from gcal_epd.infrastructure.panel_lock import PANEL_LOCK, panel_lock
 
 log = logging.getLogger(__name__)
 
@@ -27,10 +28,13 @@ def use_writable_lgpio_dir(data: Path = DATA_DIR, env=os.environ) -> None:
     env.setdefault("LG_WD", str(data))
 
 
-def push_to_display(img: Image.Image, offset: tuple[int, int] = (0, 0)) -> None:
+def push_to_display(img: Image.Image, offset: tuple[int, int] = (0, 0),
+                    lock: Path | None = None) -> None:
     """Show a screen on the panel, placed in the photo-frame window.
 
-    `offset` nudges the window (see render.frame.frame_offset).
+    `offset` nudges the window (see render.frame.frame_offset). Waits for
+    the panel lock (infrastructure/panel_lock.py) first, so a button press
+    during another refresh waits its turn instead of failing.
     """
     from gcal_epd.render.frame import to_panel
     panel = to_panel(img, offset)
@@ -45,13 +49,14 @@ def push_to_display(img: Image.Image, offset: tuple[int, int] = (0, 0)) -> None:
             "and run: pip install RPi.GPIO spidev gpiozero"
         )
 
-    epd = epd7in3f.EPD()
+    with panel_lock(lock or DATA_DIR / PANEL_LOCK):
+        epd = epd7in3f.EPD()
 
-    log.info("Initializing display...")
-    epd.init()
+        log.info("Initializing display...")
+        epd.init()
 
-    log.info("Sending image — a full refresh takes about 15–30 seconds...")
-    epd.display(epd.getbuffer(panel))
+        log.info("Sending image — a full refresh takes about 15–30 seconds...")
+        epd.display(epd.getbuffer(panel))
 
-    log.info("Done. Display going to sleep.")
-    epd.sleep()
+        log.info("Done. Display going to sleep.")
+        epd.sleep()

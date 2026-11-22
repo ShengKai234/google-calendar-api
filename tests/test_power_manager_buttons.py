@@ -18,6 +18,7 @@ def test_sets_every_gesture_on_a_pisugar(monkeypatch):
 
 
 def test_no_board_is_fine(monkeypatch, caplog):
+    caplog.set_level("INFO")
     assert _run(monkeypatch, NullBoard()) == 0
     assert "no buttons" in caplog.text
 

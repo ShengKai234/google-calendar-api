@@ -176,6 +176,8 @@ ics_feeds.toml
 ics_feeds.pending.toml
 power_schedule.toml
 power_schedule.toml.tmp
+# One process draws on the panel at a time (infrastructure/panel_lock.py)
+panel.lock
 
 # This display's own settings on top of config.toml (see config.py)
 config.local.toml

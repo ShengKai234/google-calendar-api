@@ -183,6 +183,19 @@ OnCalendar=*-*-* 19:00:00 Asia/Taipei
 
 時區直接寫在 timer 裡，所以 Pi 本身的時區不影響執行時間。不過把 Pi 設成同一個時區，log 的時間會比較好對照：`sudo timedatectl set-timezone Asia/Taipei`。修改 timer 後，重跑 `bash deploy/install.sh`。
 
+## 按鈕
+
+裝了 PiSugar 3 的話，Pi 開著時可以用它的**自訂按鈕**（不是電源鍵）操作畫面：
+
+| 按法 | 作用 |
+|---|---|
+| 按兩下 | 立刻重畫日曆：抓日曆與天氣並畫出來，不用等下一個排程時間 |
+
+按下後約 30 秒畫面才會變：7 色面板完整刷新一次就要這麼久。動作進行中再按會被忽略。Pi 關機時自訂按鈕沒有作用：先用電源鍵開機（按一下再長按），開機時會畫出日曆。
+
+`bash deploy/install.sh` 會在 pisugar-server 裡設定好；要重新設定（例如重裝 pisugar-server 之後）：
+`sudo /opt/e-pages/current/.venv/bin/python -m gcal_epd.power_manager buttons`。
+
 ---
 
 ## 手動執行
@@ -289,6 +302,7 @@ google-calendar-api/
 ├── src/gcal_epd/
 │   ├── main.py              # 入口：日曆更新與設定（python -m gcal_epd.main）
 │   ├── wifi_setup.py        # 入口：Wi-Fi 熱點設定，開機時以 root 執行
+│   ├── buttons.py           # 入口：PiSugar 按鈕的動作（epd-button@.service）
 │   ├── releases.py          # 入口：安裝、切換、回滾 release（root）
 │   ├── build_release.py     # 入口：建置 release 要發布的檔案（Mac／CI）
 │   ├── config.py            # 程式與資料根目錄、config.toml（加上本機設定）、路徑工具
@@ -299,6 +313,7 @@ google-calendar-api/
 │   │   └── setup_service.py    # 日曆設定表單 → 面板
 │   ├── infrastructure/
 │   │   ├── feeds_file.py    # 讀／寫／重置 ics_feeds.toml
+│   │   ├── panel_lock.py    # 一次只讓一個程序畫面板
 │   │   ├── ics/             # iCalendar 日曆來源
 │   │   ├── open_meteo/      # 天氣來源
 │   │   ├── onboarding/      # 日曆設定網頁表單（家裡網路，需 PIN）

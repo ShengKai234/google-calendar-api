@@ -137,6 +137,7 @@ flowchart TB
 | `epd-feed-setup.service` | `main.main()` | 程式擁有者 | 900 秒 | Wi‑Fi 設定後，沒有日曆檔或有待檢查的網址時 |
 | `gcal-epd.service` | `main.main() --no-setup` | 程式擁有者 | 120 秒 | 其他情況下 Wi‑Fi 設定後；排程觸發；開機補跑 |
 | `gcal-epd.timer` | 啟動 `gcal-epd.service` | — | — | Asia/Taipei 07:00、19:00 |
+| `epd-button@.service` | `buttons.main() <action>` | 程式擁有者 | 3 分鐘 | 按下 PiSugar 的自訂按鈕時由 pisugar-server（root）啟動；條件與刷新相同，不先檢查更新 |
 
 - **需要 root 的原因只有兩個**：`nmcli` 要修改網路設定，Wi‑Fi 表單要聽 port 80。和日曆相關的程式都以程式擁有者的身分執行。
 - **Wi‑Fi 設定加了 `DefaultDependencies=no`**：熱點在等人操作時，其他開機流程（包括 SSH）照常進行。
