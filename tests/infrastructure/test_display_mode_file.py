@@ -38,3 +38,25 @@ def test_an_unreadable_file_toggles_back_to_the_calendar(tmp_path):
     path = tmp_path / dm.MODE_FILE
     path.write_text("garbage [[")
     assert dm.toggle(path) == dm.CALENDAR
+
+
+def test_a_dangling_link_hides_the_calendar(tmp_path):
+    """Review 56-2: an entry that exists but cannot be read is not "no file"."""
+    path = tmp_path / dm.MODE_FILE
+    path.symlink_to(tmp_path / "gone.toml")
+    assert dm.load_mode(path) == dm.PRIVACY
+
+
+def test_bytes_that_are_not_text_hide_the_calendar(tmp_path):
+    path = tmp_path / dm.MODE_FILE
+    path.write_bytes(b"mode = \"\xff\xfe\"\n")
+    assert dm.load_mode(path) == dm.PRIVACY
+
+
+def test_an_unknown_mode_is_not_written_to_the_log(tmp_path, caplog):
+    """Review 56-4: a corrupted value may hold anything, even a feed URL."""
+    path = tmp_path / dm.MODE_FILE
+    secret = "https://calendar.example/private/" + "x" * 8
+    path.write_text(f'mode = "{secret}"\n')
+    assert dm.load_mode(path) == dm.PRIVACY
+    assert "calendar.example" not in caplog.text

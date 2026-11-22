@@ -241,3 +241,55 @@ def test_privacy_fetches_no_events_and_draws_the_privacy_page(mock_privacy, mock
     mock_render.assert_not_called()
     _, kwargs = mock_privacy.call_args
     assert kwargs["weather"] == _WEATHER
+
+
+@patch("gcal_epd.application.display_service.render")
+@patch("gcal_epd.application.display_service.render_privacy")
+def test_a_press_during_the_fetch_wins(mock_privacy, mock_render, tmp_path):
+    """Review 56-1: the calendar was fetched, but the privacy page was
+    switched on meanwhile; the calendar must not be drawn after it."""
+    from gcal_epd.application.display_service import run
+
+    mock_privacy.return_value = MagicMock()
+    run(event_repos=[_make_event_repo()], weather_repo=_make_weather_repo(), config=_CONFIG,
+        project_root=tmp_path, is_private=lambda: True)
+
+    mock_render.assert_not_called()
+    mock_privacy.assert_called_once()
+
+
+def test_the_page_is_chosen_and_pushed_under_the_panel_lock(tmp_path, monkeypatch):
+    """A single press switches the mode, then waits for the panel: the
+    last look at the mode and the push happen in one hold of the lock, so
+    whatever is drawn last matches the mode."""
+    from contextlib import contextmanager
+
+    from gcal_epd.application import display_service
+
+    order = []
+
+    @contextmanager
+    def lock(path):
+        order.append("lock")
+        yield
+        order.append("unlock")
+
+    def is_private():
+        order.append("check")
+        return False
+
+    def render(*a, **kw):
+        order.append("render")
+        return MagicMock()
+
+    def push(img, offset, take_lock=True):
+        assert take_lock is False
+        order.append("push")
+
+    monkeypatch.setattr(display_service, "panel_lock", lock)
+    monkeypatch.setattr(display_service, "render", render)
+    monkeypatch.setattr("gcal_epd.epd.push_to_display", push)
+    display_service.run(event_repos=[_make_event_repo()], weather_repo=None, config=_CONFIG,
+                        project_root=tmp_path, push_display=True, data_dir=tmp_path,
+                        is_private=is_private)
+    assert order == ["lock", "check", "render", "push", "unlock"]

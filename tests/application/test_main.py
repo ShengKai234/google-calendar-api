@@ -9,7 +9,8 @@ def harness(monkeypatch, tmp_path):
     calls = {"onboarding": 0, "display": 0, "error": None, "repos": []}
     monkeypatch.setattr(main_mod, "load_config", lambda: {})
     monkeypatch.setattr(main_mod, "feeds_file", lambda config: tmp_path / "ics_feeds.toml")
-    monkeypatch.setattr(main_mod, "_build_event_repos", lambda config, budget=None: calls["repos"])
+    monkeypatch.setattr(main_mod, "_build_event_repos",
+                        lambda config, budget=None, privacy=False: calls["repos"])
     monkeypatch.setattr(main_mod, "_build_weather_repo", lambda config, budget=None: None)
 
     def onboarding(config, push_display, error=""):
@@ -159,3 +160,29 @@ def test_calendar_mode_draws_the_calendar(harness, monkeypatch):
     harness("--display", "--no-setup")
     assert seen["privacy"] is False
     assert seen["event_repos"] == ["a feed"]
+
+
+def test_privacy_mode_keeps_calendar_names_out_of_the_log(monkeypatch, tmp_path, caplog):
+    """Review 56-3: while the privacy page is on, a feed problem is logged
+    without its calendar's name."""
+    caplog.set_level("INFO")
+    feeds = tmp_path / "ics_feeds.toml"
+    feeds.write_text('[[feed]]\nname = "Secret Doctor Visits"\nurl = ""\n')
+    config = {"sources": [{"type": "ics", "feeds_file": str(feeds)}]}
+    monkeypatch.setattr(main_mod, "DATA_DIR", tmp_path)
+    assert main_mod._build_event_repos(config, privacy=True) == []
+    assert "Secret Doctor Visits" not in caplog.text
+    assert main_mod._build_event_repos(config) == []
+    assert "Secret Doctor Visits" in caplog.text
+
+
+def test_privacy_is_read_before_the_feeds(harness, monkeypatch):
+    from gcal_epd.infrastructure import display_mode_file as dm
+    monkeypatch.setattr(main_mod, "DATA_DIR", harness.tmp)
+    dm.save_mode(harness.tmp / dm.MODE_FILE, dm.PRIVACY)
+    seen = []
+    monkeypatch.setattr(main_mod, "_build_event_repos",
+                        lambda config, budget=None, privacy=False: seen.append(privacy) or ["a"])
+    monkeypatch.setattr(main_mod, "run_display", lambda **kw: None)
+    harness("--display", "--no-setup")
+    assert seen and all(seen)
