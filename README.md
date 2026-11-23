@@ -262,10 +262,9 @@ data directory; delete that file to go back to the calendar from SSH.
 
 While the Pi is off, the custom button does nothing: pisugar-server, on
 the Pi, is what notices a press. Switch it on with the power button (click,
-then hold). Switched on by hand, it redraws by itself only if it missed a
-scheduled time while off; otherwise press twice once it has started (about
-a minute). With the power schedule on, it powers off again 2 minutes after
-that redraw, or 15 minutes after starting if nothing was drawn.
+then hold): once it is on Wi-Fi it redraws by itself (the privacy page, if
+that is on), and the custom button works. With the power schedule on, it
+powers off again 2 minutes after that redraw.
 
 `bash deploy/install.sh` sets this up in pisugar-server; to set it up again,
 for example after reinstalling pisugar-server:

@@ -196,7 +196,7 @@ OnCalendar=*-*-* 19:00:00 Asia/Taipei
 
 隱私頁會一直保留到下一次按一下：期間每次刷新（排程時間或開機）都會再畫隱私頁，按兩下也不會讓行程重新出現。隱私頁開著時完全不會抓日曆。狀態存在資料夾裡的 `display_mode.toml`；從 SSH 刪掉這個檔案就會回到日曆。
 
-Pi 關機時自訂按鈕沒有作用：偵測按鍵的是 Pi 上的 pisugar-server。先用電源鍵開機（按一下再長按）。手動開機時，只有關機期間錯過了排程才會自動重畫；否則等開機完成（約一分鐘）再按兩下。電源排程開著的話，重畫後 2 分鐘會再關機；若都沒有重畫，開機 15 分鐘後關機。
+Pi 關機時自訂按鈕沒有作用：偵測按鍵的是 Pi 上的 pisugar-server。先用電源鍵開機（按一下再長按）；連上 Wi-Fi 後會自動重畫（隱私頁開著就畫隱私頁），之後自訂按鈕就能用了。電源排程開著的話，重畫後 2 分鐘會再關機。
 
 `bash deploy/install.sh` 會在 pisugar-server 裡設定好；要重新設定（例如重裝 pisugar-server 之後）：
 `sudo /opt/e-pages/current/.venv/bin/python -m gcal_epd.power_manager buttons`。
