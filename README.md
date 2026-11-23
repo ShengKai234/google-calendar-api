@@ -260,9 +260,12 @@ and a double press never brings the events back. While it is on, the
 calendars are not fetched at all. It is kept in `display_mode.toml` in the
 data directory; delete that file to go back to the calendar from SSH.
 
-While the Pi is off, the custom button does nothing: switch it on with the
-power button (click, then hold); it redraws as it boots (the privacy page,
-if that is on), and then the custom button works.
+While the Pi is off, the custom button does nothing: pisugar-server, on
+the Pi, is what notices a press. Switch it on with the power button (click,
+then hold). Switched on by hand, it redraws by itself only if it missed a
+scheduled time while off; otherwise press twice once it has started (about
+a minute). With the power schedule on, it powers off again 2 minutes after
+that redraw, or 15 minutes after starting if nothing was drawn.
 
 `bash deploy/install.sh` sets this up in pisugar-server; to set it up again,
 for example after reinstalling pisugar-server:
