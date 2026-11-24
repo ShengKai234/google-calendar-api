@@ -11,6 +11,7 @@ from gcal_epd.infrastructure.open_meteo.repository import _WMO_CONDITION
 from gcal_epd.render.draw import (
     _CONDITION_ICON,
     render,
+    render_privacy,
     render_setup,
 )
 from gcal_epd.render.layout import BG, FOOTER_H, HEIGHT, PALETTE, WIDTH, TW_TZ
@@ -204,3 +205,33 @@ def test_version_is_drawn_bottom_right(tmp_path):
 def test_no_version_leaves_bottom_right_blank(tmp_path):
     img = render([], output_path=str(tmp_path / "out.png"))
     assert _bottom_right(img) == {BG}
+
+
+# --- the privacy page ---
+
+def test_privacy_page_fills_the_frame_window(tmp_path):
+    out = tmp_path / "p.png"
+    img = render_privacy(weather=_weather(), output_path=str(out), version="9.9.9")
+    assert img.size == (WIDTH, HEIGHT)
+    assert out.exists()
+
+
+def test_privacy_page_without_weather(tmp_path):
+    img = render_privacy(weather=None, output_path=str(tmp_path / "p.png"))
+    assert img.size == (WIDTH, HEIGHT)
+
+
+def test_privacy_page_takes_no_events():
+    """Nothing to leak: it is never given the events or calendar names."""
+    params = inspect.signature(render_privacy).parameters
+    assert "events" not in params
+
+
+def test_privacy_page_does_not_show_the_location(tmp_path):
+    """Same pixels whatever the weather's location label says."""
+    now = datetime.datetime(2026, 11, 22, 9, 30, tzinfo=TW_TZ)
+    a = render_privacy(weather=_weather(location="Taipei"), output_path=str(tmp_path / "a.png"),
+                       now=now)
+    b = render_privacy(weather=_weather(location="Somewhere Else Entirely"),
+                       output_path=str(tmp_path / "b.png"), now=now)
+    assert a.tobytes() == b.tobytes()

@@ -178,6 +178,9 @@ power_schedule.toml
 power_schedule.toml.tmp
 # One process draws on the panel at a time (infrastructure/panel_lock.py)
 panel.lock
+# Calendar or privacy page, from the PiSugar button (display_mode_file.py)
+display_mode.toml
+display_mode.toml.tmp
 
 # This display's own settings on top of config.toml (see config.py)
 config.local.toml

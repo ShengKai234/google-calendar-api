@@ -1,7 +1,10 @@
 """
 What the PiSugar's custom button does: `python -m gcal_epd.buttons <action>`.
 
-    double press   refresh   redraw the calendar now
+    single press   privacy   switch between the calendar and the privacy
+                             page (date and weather, no events)
+    double press   refresh   redraw what is showing now: the calendar, or
+                             the privacy page while that is on
 
 pisugar-server notices the press and runs, as root, only
 `systemctl start --no-block epd-button@<action>.service`
@@ -14,9 +17,15 @@ The PiSugar's power button is separate and keeps its own job: click and
 hold to switch the Pi on, long press to switch it off.
 """
 import argparse
+import logging
+from pathlib import Path
+
+from gcal_epd.infrastructure.panel_lock import PANEL_LOCK, panel_lock
+
+log = logging.getLogger(__name__)
 
 # gesture -> action
-GESTURES = {"double": "refresh"}
+GESTURES = {"single": "privacy", "double": "refresh"}
 
 
 def command(action: str) -> str:
@@ -36,13 +45,35 @@ def refresh() -> None:
     app.main(["--display", "--no-setup"])
 
 
-ACTIONS = {"refresh": refresh}
+def mode_file() -> Path:
+    from gcal_epd.config import DATA_DIR
+    from gcal_epd.infrastructure.display_mode_file import MODE_FILE
+    return DATA_DIR / MODE_FILE
+
+
+def privacy() -> None:
+    """Show the other page, then draw it. A double press never undoes the
+    privacy page: only this does.
+
+    The switch takes the panel lock: a refresh looks at the mode and draws
+    in one hold of it, so the switch lands before that look or after the
+    push, never between them (review 56-1). The redraw takes it again."""
+    from gcal_epd.infrastructure import display_mode_file as dm
+    path = mode_file()
+    with panel_lock(path.parent / PANEL_LOCK):
+        page = dm.toggle(path)
+    log.info("Button: showing the %s page.", page)
+    refresh()
+
+
+ACTIONS = {"privacy": privacy, "refresh": refresh}
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run a PiSugar button action")
     parser.add_argument("action", choices=sorted(ACTIONS))
     args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(message)s")  # not at import
     ACTIONS[args.action]()
     return 0
 

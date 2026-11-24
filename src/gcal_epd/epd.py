@@ -4,6 +4,7 @@ Only runs on Raspberry Pi with Waveshare driver installed in vendor/.
 """
 import logging
 import os
+from contextlib import nullcontext
 from pathlib import Path
 
 from PIL import Image
@@ -29,12 +30,14 @@ def use_writable_lgpio_dir(data: Path = DATA_DIR, env=os.environ) -> None:
 
 
 def push_to_display(img: Image.Image, offset: tuple[int, int] = (0, 0),
-                    lock: Path | None = None) -> None:
+                    lock: Path | None = None, take_lock: bool = True) -> None:
     """Show a screen on the panel, placed in the photo-frame window.
 
     `offset` nudges the window (see render.frame.frame_offset). Waits for
     the panel lock (infrastructure/panel_lock.py) first, so a button press
-    during another refresh waits its turn instead of failing.
+    during another refresh waits its turn instead of failing. A caller
+    already holding the lock (display_service) passes take_lock=False:
+    a second flock on the same file from this process would wait forever.
     """
     from gcal_epd.render.frame import to_panel
     panel = to_panel(img, offset)
@@ -49,7 +52,8 @@ def push_to_display(img: Image.Image, offset: tuple[int, int] = (0, 0),
             "and run: pip install RPi.GPIO spidev gpiozero"
         )
 
-    with panel_lock(lock or DATA_DIR / PANEL_LOCK):
+    held = panel_lock(lock or DATA_DIR / PANEL_LOCK) if take_lock else nullcontext()
+    with held:
         epd = epd7in3f.EPD()
 
         log.info("Initializing display...")

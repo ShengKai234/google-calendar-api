@@ -186,8 +186,10 @@ def test_run_push_display_calls_epd(mock_render, tmp_path):
             config=_CONFIG,
             project_root=tmp_path,
             push_display=True,
+            data_dir=tmp_path,
         )
-        mock_epd_push.assert_called_once_with(fake_img, (0, 0))
+        # The panel lock is already held by run() (review 56-1).
+        mock_epd_push.assert_called_once_with(fake_img, (0, 0), take_lock=False)
 
 
 @patch("gcal_epd.application.display_service.render")
@@ -198,8 +200,8 @@ def test_run_push_display_passes_the_frame_offset(mock_render, tmp_path):
     config = {**_CONFIG, "display": {**_CONFIG.get("display", {}), "frame_offset_px": [3, -2]}}
     with patch("gcal_epd.epd.push_to_display") as mock_epd_push:
         run(event_repos=[_make_event_repo()], weather_repo=None, config=config,
-            project_root=tmp_path, push_display=True)
-    mock_epd_push.assert_called_once_with(mock_render.return_value, (3, -2))
+            project_root=tmp_path, push_display=True, data_dir=tmp_path)
+    mock_epd_push.assert_called_once_with(mock_render.return_value, (3, -2), take_lock=False)
 
 
 @patch("gcal_epd.application.display_service.render")
@@ -221,3 +223,100 @@ def test_preview_defaults_to_the_checkout(mock_render, tmp_path):
     run(event_repos=[], weather_repo=None, config=_CONFIG, project_root=tmp_path)
 
     assert mock_render.call_args.kwargs["output_path"] == str(tmp_path / "preview.png")
+
+
+# --- the privacy page ---
+
+@patch("gcal_epd.application.display_service.render")
+@patch("gcal_epd.application.display_service.render_privacy")
+def test_privacy_fetches_no_events_and_draws_the_privacy_page(mock_privacy, mock_render,
+                                                              tmp_path):
+    from gcal_epd.application.display_service import run
+
+    mock_privacy.return_value = MagicMock()
+    event_repo = _make_event_repo()
+    weather_repo = _make_weather_repo()
+    run(event_repos=[event_repo], weather_repo=weather_repo, config=_CONFIG,
+        project_root=tmp_path, privacy=True)
+
+    event_repo.fetch_events.assert_not_called()
+    mock_render.assert_not_called()
+    _, kwargs = mock_privacy.call_args
+    assert kwargs["weather"] == _WEATHER
+
+
+@patch("gcal_epd.application.display_service.render")
+@patch("gcal_epd.application.display_service.render_privacy")
+def test_a_press_during_the_fetch_wins(mock_privacy, mock_render, tmp_path):
+    """Review 56-1: the calendar was fetched, but the privacy page was
+    switched on meanwhile; the calendar must not be drawn after it."""
+    from gcal_epd.application.display_service import run
+
+    mock_privacy.return_value = MagicMock()
+    run(event_repos=[_make_event_repo()], weather_repo=_make_weather_repo(), config=_CONFIG,
+        project_root=tmp_path, data_dir=tmp_path, is_private=lambda: True)
+
+    mock_render.assert_not_called()
+    mock_privacy.assert_called_once()
+
+
+def test_a_preview_also_holds_the_lock_while_the_mode_can_change(tmp_path, monkeypatch):
+    """Review 56-1: preview.png is saved too, so it is chosen under the
+    same lock a single press takes, even without a panel."""
+    from contextlib import contextmanager
+
+    from gcal_epd.application import display_service
+
+    order = []
+
+    @contextmanager
+    def lock(path):
+        assert path == tmp_path / display_service.PANEL_LOCK
+        order.append("lock")
+        yield
+        order.append("unlock")
+
+    monkeypatch.setattr(display_service, "panel_lock", lock)
+    monkeypatch.setattr(display_service, "render",
+                        lambda *a, **kw: order.append("render") or MagicMock())
+    display_service.run(event_repos=[_make_event_repo()], weather_repo=None, config=_CONFIG,
+                        project_root=tmp_path, data_dir=tmp_path,
+                        is_private=lambda: order.append("check") or False)
+    assert order == ["lock", "check", "render", "unlock"]
+
+
+def test_the_page_is_chosen_and_pushed_under_the_panel_lock(tmp_path, monkeypatch):
+    """A single press switches the mode, then waits for the panel: the
+    last look at the mode and the push happen in one hold of the lock, so
+    whatever is drawn last matches the mode."""
+    from contextlib import contextmanager
+
+    from gcal_epd.application import display_service
+
+    order = []
+
+    @contextmanager
+    def lock(path):
+        order.append("lock")
+        yield
+        order.append("unlock")
+
+    def is_private():
+        order.append("check")
+        return False
+
+    def render(*a, **kw):
+        order.append("render")
+        return MagicMock()
+
+    def push(img, offset, take_lock=True):
+        assert take_lock is False
+        order.append("push")
+
+    monkeypatch.setattr(display_service, "panel_lock", lock)
+    monkeypatch.setattr(display_service, "render", render)
+    monkeypatch.setattr("gcal_epd.epd.push_to_display", push)
+    display_service.run(event_repos=[_make_event_repo()], weather_repo=None, config=_CONFIG,
+                        project_root=tmp_path, push_display=True, data_dir=tmp_path,
+                        is_private=is_private)
+    assert order == ["lock", "check", "render", "push", "unlock"]
