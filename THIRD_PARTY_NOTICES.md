@@ -59,7 +59,7 @@ Raspberry Pi OS Lite card lacks, pinned in `deploy/sdcard/debs.lock`.
 
 | Package | Version | License | Source |
 |---|---|---|---|
-| libfreetype6 | 2.13.3+dfsg-1+deb13u1 | FTL | Raspbian `trixie`: `apt-get source freetype=2.13.3+dfsg-1+deb13u1` |
+| libfreetype6 | 2.13.3+dfsg-1+deb13u2 | FTL | Raspbian `trixie`: `apt-get source freetype=2.13.3+dfsg-1+deb13u2` |
 | liblcms2-2 | 2.16-2+deb13u2 | MIT | `apt-get source lcms2=2.16-2+deb13u2` |
 | libopenjp2-7 | 2.5.3-2.1~deb13u2 | BSD-2-Clause | `apt-get source openjpeg2=2.5.3-2.1~deb13u2` |
 | libwebpdemux2 | 1.5.0-0.1 | BSD-3-Clause | `apt-get source libwebp=1.5.0-0.1` |
