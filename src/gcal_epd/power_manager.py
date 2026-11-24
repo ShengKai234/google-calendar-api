@@ -13,6 +13,7 @@ Runs at boot as root (deploy/epd-power.service):
     python -m gcal_epd.power_service run --dry-run   # decide, never power off
     python -m gcal_epd.power_service status          # what it sees and would do
     python -m gcal_epd.power_service apply-schedule  # gcal-epd.timer follows the slots
+    python -m gcal_epd.power_service buttons         # the PiSugar button's actions
 
 The rules live in domain/power_policy.py, the work in
 application/power_service.py; this module is the command line and wiring.
@@ -32,6 +33,7 @@ from gcal_epd.application.power_service import PowerService
 from gcal_epd.config import load_config, power_board, power_timezone, schedule_file
 from gcal_epd.infrastructure.power.activity import SystemdActivity
 from gcal_epd.infrastructure.power.boards import make_board
+from gcal_epd.infrastructure.power.pisugar import PiSugar3Board, PiSugarError
 from gcal_epd.infrastructure.power.system import System
 from gcal_epd.infrastructure.power.timer_dropin import DROPIN, apply_schedule
 from gcal_epd.infrastructure.schedule_file import TomlScheduleStore
@@ -48,6 +50,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("sync-clock", help="set the clock from the RTC, or the RTC from NTP")
     sub.add_parser("apply-schedule", help="make gcal-epd.timer fire at the schedule's slots")
     sub.add_parser("boot", help="sync-clock, then apply-schedule (run at boot)")
+    sub.add_parser("buttons", help="tell pisugar-server what the custom button does")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")  # not at import
 
@@ -58,6 +61,8 @@ def main(argv: list[str] | None = None) -> int:
     service = PowerService(make_board(power_board(config)), SystemdActivity(system), system,
                            schedules, tz)
 
+    if args.command == "buttons":
+        return set_up_buttons(service.board)
     if args.command == "status":
         print("\n".join(service.status()))
         return 0
@@ -74,6 +79,27 @@ def main(argv: list[str] | None = None) -> int:
             return 1
     if args.command == "run":
         service.run(dry_run=args.dry_run)
+    return 0
+
+
+def set_up_buttons(board) -> int:
+    """Give each button gesture its command (gcal_epd.buttons). A Pi with no
+    PiSugar, or one that does not answer, works on without its button."""
+    from gcal_epd.buttons import commands
+    if not isinstance(board, PiSugar3Board):
+        log.info("%s: no buttons to set up.", board.name)
+        return 0
+    if not board.available():
+        log.warning("%s does not answer: the button is not set up. "
+                    "Run `power_manager buttons` again once it does.", board.name)
+        return 0
+    try:
+        for gesture, command in commands().items():
+            board.client.set_button(gesture, command)
+            log.info("%s button, %s press: %s", board.name, gesture, command)
+    except PiSugarError as e:
+        log.error("Could not set up the %s button: %s", board.name, e)
+        return 1
     return 0
 
 

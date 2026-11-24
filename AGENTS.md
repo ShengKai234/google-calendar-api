@@ -58,4 +58,9 @@ everything about installing it.
   waits while the check or the refresh runs, and up to 5 min while one is
   queued (power_policy.QUEUE_WAIT). Run-time limits (TimeoutStartSec, from
   each unit's own start): epd-update 15 min (stopped: back to the running
-  release, one failed try), gcal-epd 3 min, epd-power's setup 2 min.
+  release, one failed try), gcal-epd 3 min, epd-power's setup 2 min,
+  epd-button@ 3 min.
+- The PiSugar's custom button: pisugar-server (root) only runs
+  `systemctl start --no-block epd-button@<action>.service`
+  (gcal_epd.buttons; set up by `power_manager buttons`). Every push to the
+  panel takes `DATA_DIR/panel.lock` (infrastructure/panel_lock.py).

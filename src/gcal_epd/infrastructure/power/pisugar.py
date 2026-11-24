@@ -25,6 +25,13 @@ github.com/PiSugar/pisugar-power-manager-rs:
 - pisugar-core/src/pisugar3.rs + rtc.rs: the PiSugar 3 alarm stores only
   hour, minute and second (in UTC) plus the weekday repeat mask; the date
   read back is a placeholder. So an alarm is compared by time of day.
+- README.md + cmds.rs: `set_button_shell single|double|long <command>` and
+  `set_button_enable single|double|long 0|1` for the custom button (not
+  the power button). The server joins the command's words with single
+  spaces (quoting is lost), saves them to its --config file
+  (/etc/pisugar-server/config.json as packaged) and runs the command with
+  `/bin/sh -c` as its own user, root, when the PiSugar 3 reports the tap
+  in I2C register 0x08 (read about every 500 ms).
 - pisugar-core/src/lib.rs `write_alarm`: refused while `auto_power_on` is
   on ("auto_power_on is in conflict with alarm function").
 """
@@ -42,6 +49,7 @@ DEFAULT_PORT = 8423
 TIMEOUT = 5.0           # seconds; the server answers from memory or one I2C read
 EVERY_DAY = 0b1111111   # alarm repeat mask: all seven weekdays (README example 127)
 _DONE = "done"
+GESTURES = ("single", "double", "long")
 
 Transport = Callable[[str], str]
 
@@ -202,6 +210,16 @@ class PiSugar:
         got_repeat = self.alarm_repeat()
         if got_repeat != repeat:
             raise PiSugarError(f"alarm repeat reads back as {got_repeat}, not {repeat}")
+
+
+    def set_button(self, gesture: str, command: str) -> None:
+        """Run `command` (as root, via /bin/sh) when the custom button is
+        pressed this way. Keep it to one plain command: pisugar-server loses
+        any quoting."""
+        if gesture not in GESTURES:
+            raise ValueError(f"unknown button gesture {gesture!r}")
+        self._do(f"set_button_shell {gesture} {command}")
+        self._do(f"set_button_enable {gesture} 1")
 
 
 class PiSugar3Board:

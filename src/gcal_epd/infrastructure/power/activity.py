@@ -7,7 +7,10 @@ and module names of this app live here, not in the power rules.
 from gcal_epd.domain.power_ports import Activity
 from gcal_epd.infrastructure.power.system import System
 
-REFRESH_UNITS = ("gcal-epd.service", "epd-feed-setup.service")
+# The PiSugar button's actions (deploy/epd-button@.service) redraw the
+# panel too: the Pi stays on while one runs, and grace counts from its end.
+BUTTON_UNITS = ("epd-button@refresh.service", "epd-button@privacy.service")
+REFRESH_UNITS = ("gcal-epd.service", "epd-feed-setup.service") + BUTTON_UNITS
 SETUP_UNITS = ("epd-wifi-setup.service",)
 UPDATE_UNIT = "epd-update.service"
 

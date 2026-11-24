@@ -89,7 +89,9 @@ install_unit epd-feed-setup.service
 install_unit epd-power.service
 install_unit epd-power-schedule.service
 install_unit epd-power-schedule.path
-echo "      Installed $SERVICE_NAME.service/.timer, epd-wifi-setup, epd-feed-setup and epd-power"
+# The PiSugar's custom button: pisugar-server starts an instance per action.
+install_unit epd-button@.service
+echo "      Installed $SERVICE_NAME.service/.timer, epd-wifi-setup, epd-feed-setup, epd-power and epd-button@"
 # Over-the-air updates replace an installed release (RELEASE marks one);
 # a git checkout is updated with git, so it gets no update check.
 if [ -f "$PROJECT_DIR/RELEASE" ]; then
@@ -123,6 +125,10 @@ sudo systemctl enable --now epd-power-schedule.path
 # The timer follows the power schedule's times from now on, not just after a boot.
 (cd "$PROJECT_DIR" && sudo env PYTHONDONTWRITEBYTECODE=1 "$PYTHON" -m gcal_epd.power_manager apply-schedule) \
     || echo "      Warning: could not apply the power schedule to $SERVICE_NAME.timer"
+# The PiSugar's custom button: tell pisugar-server what each press does.
+# Without a PiSugar this does nothing.
+(cd "$PROJECT_DIR" && sudo env PYTHONDONTWRITEBYTECODE=1 "$PYTHON" -m gcal_epd.power_manager buttons) \
+    || echo "      Warning: could not set up the PiSugar button"
 
 # --- Enable hardware watchdog ---
 echo "[4/4] Enabling hardware watchdog..."

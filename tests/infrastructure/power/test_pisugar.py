@@ -210,3 +210,27 @@ def test_tcp_against_a_real_socket():
 def test_utc_time_of_day():
     assert time_of_day_utc(WAKE) == (22, 55, 0)
     assert time_of_day_utc(WAKE.astimezone(timezone.utc)) == (22, 55, 0)
+
+
+# --- the custom button -------------------------------------------------
+def test_set_button_sets_the_command_then_enables_it(sugar, server):
+    sugar.set_button("double", "systemctl start --no-block epd-button@refresh.service")
+    assert server.commands == [
+        "set_button_shell double systemctl start --no-block epd-button@refresh.service",
+        "set_button_enable double 1"]
+    assert server.button_shell["double"] == \
+        "systemctl start --no-block epd-button@refresh.service"
+    assert server.button_enable["double"] is True
+
+
+def test_set_button_refuses_an_unknown_gesture(sugar, server):
+    with pytest.raises(ValueError):
+        sugar.set_button("triple", "true")
+    assert server.commands == []
+
+
+def test_set_button_error_is_raised(sugar, server):
+    server.errors["set_button_shell"] = "I2C not connected"
+    with pytest.raises(PiSugarError, match="I2C not connected"):
+        sugar.set_button("double", "true")
+    assert "set_button_enable double 1" not in server.commands

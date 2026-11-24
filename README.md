@@ -241,6 +241,24 @@ change when it runs — but setting it to match keeps log timestamps readable:
 `sudo timedatectl set-timezone Asia/Taipei`. After editing the timer, run
 `bash deploy/install.sh` again.
 
+## Button
+
+With a PiSugar 3, its **custom button** (not the power button) acts on the
+display while the Pi is on:
+
+| Press | Does |
+|---|---|
+| double | redraws the calendar now: fetches the calendars and weather and draws them, without waiting for the next slot |
+
+The panel changes about 30 s after the press: a full refresh of the
+7-colour panel takes that long. A press while an action runs is ignored.
+While the Pi is off, the custom button does nothing: switch it on with the
+power button (click, then hold) and it draws the calendar as it boots.
+
+`bash deploy/install.sh` sets this up in pisugar-server; to set it up again,
+for example after reinstalling pisugar-server:
+`sudo /opt/e-pages/current/.venv/bin/python -m gcal_epd.power_manager buttons`.
+
 ---
 
 ## Running by hand
@@ -359,6 +377,7 @@ google-calendar-api/
 ├── src/gcal_epd/
 │   ├── main.py              # Entry: calendar refresh and setup (python -m gcal_epd.main)
 │   ├── wifi_setup.py        # Entry: Wi-Fi hotspot setup, runs at boot as root
+│   ├── buttons.py           # Entry: what the PiSugar button does (epd-button@.service)
 │   ├── releases.py          # Entry: install / switch / roll back releases (root)
 │   ├── build_release.py     # Entry: build a release's published files (Mac / CI)
 │   ├── config.py            # Code and data roots, config.toml (+ local), path helpers
@@ -369,6 +388,7 @@ google-calendar-api/
 │   │   └── setup_service.py    # Calendar setup form → panel
 │   ├── infrastructure/
 │   │   ├── feeds_file.py    # Read / write / reset ics_feeds.toml
+│   │   ├── panel_lock.py    # One process draws on the panel at a time
 │   │   ├── ics/             # iCalendar feed repository
 │   │   ├── open_meteo/      # Weather repository
 │   │   ├── onboarding/      # Calendar setup web form (LAN, PIN)
