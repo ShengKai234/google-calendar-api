@@ -1,0 +1,2 @@
+# Build output and the cached base image (image/build-in-docker.sh)
+dist/
