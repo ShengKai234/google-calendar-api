@@ -234,3 +234,17 @@ def test_set_button_error_is_raised(sugar, server):
     with pytest.raises(PiSugarError, match="I2C not connected"):
         sugar.set_button("double", "true")
     assert "set_button_enable double 1" not in server.commands
+
+
+def test_battery_charging_reads_the_flag():
+    sent = []
+
+    def transport(command):
+        sent.append(command)
+        return "battery_charging: true"
+
+    assert PiSugar(transport).battery_charging() is True
+    assert sent == ["get battery_charging"]
+    assert PiSugar(lambda c: "battery_charging: false").battery_charging() is False
+    with pytest.raises(PiSugarError):
+        PiSugar(lambda c: "battery_charging: maybe").battery_charging()

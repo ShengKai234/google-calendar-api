@@ -3,8 +3,10 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import Callable
 
-from gcal_epd.config import DATA_DIR, font_path, output_path as _output_path
+from gcal_epd.config import DATA_DIR, font_path, low_battery_percent
+from gcal_epd.config import output_path as _output_path
 from gcal_epd.infrastructure.panel_lock import PANEL_LOCK, panel_lock
+from gcal_epd.domain.battery import BatteryStatus
 from gcal_epd.domain.repositories import EventRepository, WeatherRepository
 from gcal_epd.render.draw import render, render_privacy
 from gcal_epd.version import version
@@ -21,6 +23,7 @@ def run(
     data_dir: Path | None = None,
     privacy: bool = False,
     is_private: Callable[[], bool] | None = None,
+    battery: Callable[[], BatteryStatus] | None = None,
 ) -> None:
     """Fetch, render and (optionally) push to the panel.
 
@@ -34,6 +37,9 @@ def run(
     (gcal_epd.buttons), so a calendar fetched before the press is never
     drawn, saved or pushed after it. The lock is taken for a push, and
     also for a preview whenever the mode can change.
+
+    `battery` is read once, before the lock, and drawn in the footer on
+    either page; None (mains power) draws no battery at all.
     """
     output_path = _output_path(config, project_root if data_dir is None else data_dir)
     font = font_path(config, project_root)
@@ -53,6 +59,9 @@ def run(
         all_events.sort(key=lambda e: e.start)
 
     weather = weather_repo.fetch_weather() if weather_repo else None
+    footer = dict(version=version(project_root),
+                  battery=battery() if battery else None,
+                  low_battery_percent=low_battery_percent(config))
 
     locked = push_display or is_private is not None
     lock = panel_lock((data_dir or DATA_DIR) / PANEL_LOCK) if locked else nullcontext()
@@ -62,11 +71,11 @@ def run(
             privacy, all_events = True, []
         if privacy:
             img = render_privacy(weather=weather, output_path=output_path, font_path=font,
-                                 version=version(project_root))
+                                 **footer)
             log.info("Privacy page; preview saved to %s", output_path)
         else:
             img = render(all_events, weather=weather, output_path=output_path,
-                         font_path=font, version=version(project_root))
+                         font_path=font, **footer)
             log.info("Preview saved to %s", output_path)
 
         if push_display:

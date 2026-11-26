@@ -14,12 +14,20 @@ from typing import Callable
 
 from gcal_epd.application.display_service import run as run_display
 from gcal_epd.application.setup_service import apply_pending_feeds, run_onboarding
-from gcal_epd.config import DATA_DIR, DEFAULT_FEEDS_FILE, PROJECT_ROOT, feeds_file, load_config
+from gcal_epd.config import (
+    DATA_DIR,
+    DEFAULT_FEEDS_FILE,
+    PROJECT_ROOT,
+    feeds_file,
+    load_config,
+    power_board,
+)
 from gcal_epd.infrastructure.display_mode_file import MODE_FILE, PRIVACY, load_mode
 from gcal_epd.infrastructure.fetch_budget import FetchBudget
 from gcal_epd.infrastructure.feeds_file import load_feeds, pending_feeds_path, reset_feeds
 from gcal_epd.infrastructure.ics.repository import ICSRepository
 from gcal_epd.infrastructure.open_meteo.repository import OpenMeteoRepository
+from gcal_epd.infrastructure.power.battery import read_battery
 from gcal_epd.version import version
 
 log = logging.getLogger(__name__)
@@ -170,6 +178,8 @@ def main(argv: list[str] | None = None) -> None:
         # Looked at again just before drawing: a press may have switched
         # to the privacy page while the calendars were being fetched.
         is_private=is_private,
+        # Mains power ([power] board = "none") has no battery to show.
+        battery=None if power_board(config) == "none" else read_battery,
     )
 
 

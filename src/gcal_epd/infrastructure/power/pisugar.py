@@ -11,7 +11,7 @@ Command names, arguments and reply formats are from the official repo,
 github.com/PiSugar/pisugar-power-manager-rs:
 
 - README.md, "Unix Domain Socket / Webscoket / TCP" command table:
-  `get battery`, `get battery_power_plugged`, `get rtc_time`,
+  `get battery`, `get battery_charging`, `get battery_power_plugged`, `get rtc_time`,
   `get rtc_alarm_time`, `get rtc_alarm_enabled`, `get alarm_repeat`,
   `get model`, `rtc_pi2rtc`, `rtc_rtc2pi`,
   `rtc_alarm_set [ISO8601 time string] [repeat]` with the example
@@ -156,6 +156,9 @@ class PiSugar:
 
     def power_plugged(self) -> bool:
         return parse_bool(self._get("battery_power_plugged"))
+
+    def battery_charging(self) -> bool:
+        return parse_bool(self._get("battery_charging"))
 
     def rtc_time(self) -> datetime:
         return parse_time(self._get("rtc_time"))

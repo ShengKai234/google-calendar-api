@@ -6,6 +6,7 @@ import pytest
 from PIL import Image, ImageChops
 
 from gcal_epd.config import PROJECT_ROOT
+from gcal_epd.domain.battery import BatteryStatus
 from gcal_epd.domain.event import CalendarEvent
 from gcal_epd.domain.weather import WeatherInfo
 from gcal_epd.render.draw import render, render_setup
@@ -197,6 +198,25 @@ def test_footer_clears_the_last_row(tmp_path, monkeypatch):
     rows_bottom = _content_box(rows_only)[3]
     footer_top = ImageChops.difference(full, rows_only).getbbox()[1]
     assert footer_top > rows_bottom
+
+
+@pytest.mark.parametrize("battery", [BatteryStatus(15, charging=True), BatteryStatus.unknown()])
+def test_footer_battery_clears_the_last_row(tmp_path, monkeypatch, battery):
+    import gcal_epd.render.draw as draw_mod
+
+    events = [_event(_day(d % 3, f"{9 + d:02d}:00"), "Weekly sync gjpqy") for d in range(12)]
+    full = render(events, output_path=str(tmp_path / "a.png"), font_path=FONT,
+                  version="0.3.1", battery=battery)
+    monkeypatch.setattr(draw_mod, "_draw_footer", lambda *a, **k: None)
+    rows_only = render(events, output_path=str(tmp_path / "b.png"), font_path=FONT)
+
+    footer = ImageChops.difference(full, rows_only).getbbox()
+    assert footer[1] > _content_box(rows_only)[3]
+    monkeypatch.undo()
+    no_battery = render(events, output_path=str(tmp_path / "c.png"), font_path=FONT,
+                        version="0.3.1")
+    cell = ImageChops.difference(full, no_battery).getbbox()
+    assert cell[3] <= HEIGHT - PADDING   # and the cell stays above the mat's edge
 
 
 def _header_has_sun(img: Image.Image) -> bool:
