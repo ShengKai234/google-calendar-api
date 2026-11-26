@@ -4,6 +4,9 @@ What the Pi is busy with, asked of systemd, logind and /proc.
 The systemd adapter for ActivityProbe (domain/power_ports.py). The unit
 and module names of this app live here, not in the power rules.
 """
+import time
+from typing import Callable
+
 from gcal_epd.domain.power_ports import Activity
 from gcal_epd.infrastructure.power.system import System
 
@@ -30,8 +33,15 @@ def classify_processes(argvs: list[list[str]]) -> tuple[str, str]:
 
 
 class SystemdActivity:
-    def __init__(self, system: System) -> None:
+    def __init__(self, system: System,
+                 monotonic: Callable[[], float] = time.monotonic) -> None:
         self.system = system
+        self._monotonic = monotonic
+        # When a refresh was last seen running. systemd unloads a template
+        # instance (epd-button@...) once it ends and nothing refers to it,
+        # and its exit time goes with it; the grace then counts from here,
+        # at most one poll before the real end.
+        self._seen_refreshing: float | None = None
 
     def activity(self) -> Activity:
         setup = refreshing = queued = ""
@@ -77,6 +87,11 @@ class SystemdActivity:
                 queued = queued or UPDATE_UNIT
             ended(state)
         proc_setup, proc_refresh = classify_processes(self.system.command_lines())
+        if refreshing or proc_refresh:
+            self._seen_refreshing = self._monotonic()
+        if self._seen_refreshing is not None:
+            last_end = max(last_end or self._seen_refreshing, self._seen_refreshing)
+            last_any = max(last_any or self._seen_refreshing, self._seen_refreshing)
         return Activity(setup=setup or proc_setup,
                         refreshing=refreshing or proc_refresh,
                         ssh_sessions=self.system.remote_sessions(),
