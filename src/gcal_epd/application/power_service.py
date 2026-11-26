@@ -124,7 +124,9 @@ class PowerService:
         """Set the alarm for the next wake-up, verify it, then power off.
 
         Returns False, leaving the Pi on, if the alarm could not be set and
-        read back: off without an alarm, it would never come back on.
+        read back: off without an alarm, it would never come back on. Also
+        False if, by the time the alarm is set, something keeps the Pi on
+        after all (a press has started a redraw, someone logged in).
         """
         try:
             if self.host.ntp_synchronized():
@@ -144,7 +146,16 @@ class PowerService:
                       "and verified (%s). Staying on, or the Pi would never wake.",
                       wake.isoformat(), e)
             return False
-        log.info("Wake-up alarm set for %s. Powering off.", wake.isoformat())
+        log.info("Wake-up alarm set for %s.", wake.isoformat())
+        # Setting the alarm can take a while, and a button press read
+        # meanwhile (the board answering again after an I2C error) has
+        # started a redraw since the decision: look once more.
+        decision = decide(self.snapshot())
+        if not decision.power_off:
+            log.info("Not powering off after all: %s. The alarm stays set; "
+                     "it is set again before the next power-off.", decision.reason)
+            return False
+        log.info("Powering off.")
         if not self.host.poweroff():
             log.error("systemctl poweroff failed; staying on.")
             return False
