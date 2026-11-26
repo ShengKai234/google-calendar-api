@@ -478,3 +478,45 @@ def test_a_button_unit_unloaded_when_it_ends_still_gets_its_grace(tmp_path):
     assert not d.power_off and "grace" in d.reason
     rig.t, rig.mono = at(7, 2, 1), 421.0                  # 120 s after 300 s
     assert decide(rig.manager.snapshot()).power_off
+
+
+# --- a press while the alarm is being set ----------------------------
+def _press_while_arming(rig, unit="epd-button@privacy.service"):
+    """The board's arm() starts `unit` the first time it is called, as a
+    press read the moment the PiSugar answers again would."""
+    board = rig.manager.board
+    arm = board.arm
+    pressed = []
+
+    def arm_then_press(when):
+        arm(when)
+        if not pressed:
+            pressed.append(when)
+            rig.system.units[unit] = UnitState("activating", None)
+
+    board.arm = arm_then_press
+
+
+def test_a_press_while_the_alarm_is_set_keeps_it_on(tmp_path):
+    """Seen on the display (#54): while the PiSugar's I2C failed, the alarm
+    could not be set and the manager retried. When the bus answered again,
+    a press waiting in the board was read too: its redraw started after the
+    decision to power off, and the Pi powered off half-way through it."""
+    rig = Rig(tmp_path, now=at(7, 0), uptime=300.0)
+    assert decide(rig.manager.snapshot()).power_off
+    _press_while_arming(rig)
+    assert not rig.manager.arm_and_power_off()
+    assert rig.system.poweroffs == 0
+
+
+def test_after_that_press_it_waits_for_the_redraw_and_the_grace(tmp_path):
+    rig = Rig(tmp_path, now=at(7, 0), uptime=300.0)
+    _press_while_arming(rig)
+    unit = "epd-button@privacy.service"
+    rig.manager._sleep = lambda s: (
+        rig.sleep(s),
+        rig.system.units.__setitem__(unit, UnitState("inactive", 340.0))
+        if rig.mono >= 340.0 else None)
+    assert rig.manager.run() == "powered-off"
+    assert rig.system.poweroffs == 1
+    assert rig.mono >= 340.0 + GRACE        # the redraw ended at 340 s
