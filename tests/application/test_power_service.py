@@ -96,7 +96,8 @@ class Rig:
         self.max_sleeps = 50
         self.manager = PowerService(
             PiSugar3Board(PiSugar(self.server), startup_wait=BOARD_WAIT),
-            SystemdActivity(self.system), self.system, self, TPE,
+            SystemdActivity(self.system, monotonic=lambda: self.mono),
+            self.system, self, TPE,
             stay_awake_flag=self.flag, clock=lambda: self.t.astimezone(UTC),
             monotonic=lambda: self.mono, sleep=self.sleep)
 
@@ -459,6 +460,23 @@ def test_a_button_action_keeps_it_on_then_grace(tmp_path, unit):
     rig.system.units[unit] = UnitState("inactive", 290.0)                # 06:59:50
     assert not decide(rig.manager.snapshot()).power_off                  # grace
     rig.t, rig.mono = at(7, 2), 420.0
+    assert decide(rig.manager.snapshot()).power_off
+
+
+def test_a_button_unit_unloaded_when_it_ends_still_gets_its_grace(tmp_path):
+    """Seen on the display: systemd unloads a template instance
+    (epd-button@...) once it ends and nothing refers to it, and its exit
+    time goes with it (`ExecMainExitTimestampMonotonic=0` two minutes after
+    a press). The grace must count from the redraw anyway."""
+    rig = Rig(tmp_path, now=at(7, 0), uptime=300.0)       # gcal-epd ended at 130 s
+    unit = "epd-button@privacy.service"
+    rig.system.units[unit] = UnitState("activating", None)
+    assert not decide(rig.manager.snapshot()).power_off  # seen running at 300 s
+    rig.t, rig.mono = at(7, 0, 30), 330.0
+    rig.system.units[unit] = UnitState("inactive", None)  # ended, then unloaded
+    d = decide(rig.manager.snapshot())
+    assert not d.power_off and "grace" in d.reason
+    rig.t, rig.mono = at(7, 2, 1), 421.0                  # 120 s after 300 s
     assert decide(rig.manager.snapshot()).power_off
 
 
