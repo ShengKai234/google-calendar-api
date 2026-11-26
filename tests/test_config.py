@@ -1,4 +1,5 @@
 """Tests for the shared config helpers."""
+import logging
 import subprocess
 import sys
 from pathlib import Path
@@ -152,3 +153,23 @@ def test_wifi_setup_never_refers_to_main():
     """Covers every path, including _stash_feeds, which once imported main."""
     src = Path(__file__).parent.parent / "src" / "gcal_epd" / "wifi_setup.py"
     assert "gcal_epd.main" not in src.read_text()
+
+
+def test_low_battery_percent_defaults_to_20():
+    assert config.low_battery_percent({}) == 20
+    assert config.low_battery_percent(config.load_config()) == 20
+
+
+def test_low_battery_percent_comes_from_display():
+    assert config.low_battery_percent({"display": {"low_battery_percent": 15}}) == 15
+    assert config.low_battery_percent({"display": {"low_battery_percent": 15.5}}) == 15.5
+    assert config.low_battery_percent({"display": {"low_battery_percent": 0}}) == 0
+
+
+def test_a_bad_low_battery_percent_is_ignored(caplog):
+    with caplog.at_level(logging.WARNING):
+        assert config.low_battery_percent({"display": {"low_battery_percent": "low"}}) == 20
+        assert config.low_battery_percent({"display": {"low_battery_percent": -1}}) == 20
+        assert config.low_battery_percent({"display": {"low_battery_percent": 101}}) == 20
+        assert config.low_battery_percent({"display": {"low_battery_percent": True}}) == 20
+    assert caplog.text.count("low_battery_percent") == 4

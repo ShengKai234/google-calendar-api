@@ -320,3 +320,73 @@ def test_the_page_is_chosen_and_pushed_under_the_panel_lock(tmp_path, monkeypatc
                         project_root=tmp_path, push_display=True, data_dir=tmp_path,
                         is_private=is_private)
     assert order == ["lock", "check", "render", "push", "unlock"]
+
+
+# --- the battery mark -------------------------------------------------
+
+def test_a_refresh_reads_the_battery_once_and_passes_it(monkeypatch, tmp_path):
+    from gcal_epd.application import display_service
+    from gcal_epd.domain.battery import BatteryStatus
+
+    status = BatteryStatus(85.0, True)
+    calls = []
+    monkeypatch.setattr(display_service, "read_battery_status",
+                        lambda: calls.append("read") or status)
+    seen = {}
+    monkeypatch.setattr(display_service, "render",
+                        lambda *a, **k: seen.update(k) or MagicMock())
+    display_service.run(event_repos=[_make_event_repo()], weather_repo=None, config=_CONFIG,
+                        project_root=tmp_path, data_dir=tmp_path)
+    assert calls == ["read"]
+    assert seen["battery"] == status
+    assert seen["low_battery_percent"] == 20
+
+
+def test_the_warning_threshold_comes_from_config(monkeypatch, tmp_path):
+    from gcal_epd.application import display_service
+
+    config = {**_CONFIG, "display": {**_CONFIG["display"], "low_battery_percent": 30}}
+    seen = {}
+    monkeypatch.setattr(display_service, "read_battery_status", lambda: None)
+    monkeypatch.setattr(display_service, "render",
+                        lambda *a, **k: seen.update(k) or MagicMock())
+    display_service.run(event_repos=[], weather_repo=None, config=config,
+                        project_root=tmp_path, data_dir=tmp_path)
+    assert seen["low_battery_percent"] == 30
+
+
+def test_a_battery_read_that_raises_still_draws(monkeypatch, tmp_path, caplog):
+    import logging
+
+    from gcal_epd.application import display_service
+
+    def boom():
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(display_service, "read_battery_status", boom)
+    seen = {}
+    monkeypatch.setattr(display_service, "render",
+                        lambda *a, **k: seen.update(k) or MagicMock())
+    with caplog.at_level(logging.WARNING):
+        display_service.run(event_repos=[], weather_repo=None, config=_CONFIG,
+                            project_root=tmp_path, data_dir=tmp_path)
+    assert seen["battery"] is None
+    assert "Battery level unavailable" in caplog.text
+
+
+def test_the_privacy_page_gets_the_same_reading(monkeypatch, tmp_path):
+    from gcal_epd.application import display_service
+    from gcal_epd.domain.battery import BatteryStatus
+
+    status = BatteryStatus(15.0, False)
+    calls = []
+    monkeypatch.setattr(display_service, "read_battery_status",
+                        lambda: calls.append("read") or status)
+    seen = {}
+    monkeypatch.setattr(display_service, "render_privacy",
+                        lambda *a, **k: seen.update(k) or MagicMock())
+    display_service.run(event_repos=[_make_event_repo()], weather_repo=_make_weather_repo(),
+                        config=_CONFIG, project_root=tmp_path, data_dir=tmp_path, privacy=True)
+    assert calls == ["read"]
+    assert seen["battery"] == status
+    assert seen["low_battery_percent"] == 20

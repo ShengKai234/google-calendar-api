@@ -195,6 +195,7 @@ location = "Taipei"
 [display]
 output_path = "preview.png"           # last rendered image
 font_path = "assets/fonts/NotoSansCJKtc-Regular.otf"
+low_battery_percent = 20              # warns below this; a failed read draws a red X
 # frame_offset_px = [0, 0]            # move the frame window [right, down] in pixels
 ```
 

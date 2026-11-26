@@ -5,6 +5,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from gcal_epd.domain.battery import BatteryStatus
 from gcal_epd.domain.event import CalendarEvent
 from gcal_epd.domain.weather import WeatherInfo
 from gcal_epd.infrastructure.open_meteo.repository import _WMO_CONDITION
@@ -202,9 +203,11 @@ def test_version_is_drawn_bottom_right(tmp_path):
     assert PALETTE["white"] in _bottom_right(img)
 
 
-def test_no_version_leaves_bottom_right_blank(tmp_path):
+def test_no_version_leaves_no_white_type_bottom_right(tmp_path):
+    """No release label. An unread battery is a red cross there, not white type."""
     img = render([], output_path=str(tmp_path / "out.png"))
-    assert _bottom_right(img) == {BG}
+    assert PALETTE["white"] not in _bottom_right(img)
+    assert PALETTE["red"] in _bottom_right(img)
 
 
 # --- the privacy page ---
@@ -225,6 +228,93 @@ def test_privacy_page_takes_no_events():
     """Nothing to leak: it is never given the events or calendar names."""
     params = inspect.signature(render_privacy).parameters
     assert "events" not in params
+
+
+def _colored(img, color):
+    width, height = img.size
+    return [(x, y) for y in range(height) for x in range(width) if img.getpixel((x, y)) == color]
+
+
+def test_healthy_battery_is_white_in_the_footer(tmp_path):
+    img = render([], battery=BatteryStatus(85, False), output_path=str(tmp_path / "out.png"),
+                 version="0.5.1")
+    assert _colored(img, PALETTE["white"])
+    assert _colored(img, PALETTE["red"]) == []
+    assert _colored(img, PALETTE["yellow"]) == []
+
+
+def test_low_battery_is_a_red_mark_on_the_right_of_the_footer(tmp_path):
+    img = render([], battery=BatteryStatus(15, False), low_battery_percent=20,
+                 output_path=str(tmp_path / "out.png"), version="0.5.1")
+    reds = _colored(img, PALETTE["red"])
+    assert reds
+    assert min(x for x, _ in reds) > WIDTH // 2
+    assert min(y for _, y in reds) >= HEIGHT - FOOTER_H - 4
+
+
+def test_the_warning_follows_the_shown_percent(tmp_path):
+    """19.5 prints as 20, which is not below 20. 19.4 prints as 19 and warns."""
+    at = render([], battery=BatteryStatus(19.5, False), low_battery_percent=20,
+                output_path=str(tmp_path / "at.png"))
+    below = render([], battery=BatteryStatus(19.4, False), low_battery_percent=20,
+                   output_path=str(tmp_path / "below.png"))
+    assert _colored(at, PALETTE["red"]) == []
+    assert _colored(below, PALETTE["red"])
+
+
+def test_charging_draws_a_yellow_bolt_beside_the_cell(tmp_path):
+    img = render([], battery=BatteryStatus(85, True), output_path=str(tmp_path / "out.png"))
+    bolts = _colored(img, PALETTE["yellow"])
+    assert bolts
+    assert min(x for x, _ in bolts) > WIDTH // 2
+    assert min(y for _, y in bolts) >= HEIGHT - FOOTER_H - 4
+
+
+def _red_box(img):
+    reds = _colored(img, PALETTE["red"])
+    xs = [x for x, _ in reds]
+    ys = [y for _, y in reds]
+    return reds, (min(xs), min(ys), max(xs), max(ys))
+
+
+def _center_is_red(reds, box):
+    """The cross meets in the middle of the cell. An empty outline does not."""
+    minx, miny, maxx, maxy = box
+    cx, cy = (minx + maxx) // 2, (miny + maxy) // 2
+    return any(abs(x - cx) <= 2 and abs(y - cy) <= 2 for x, y in reds)
+
+
+def test_unreadable_battery_draws_a_red_cross_and_no_percent(tmp_path):
+    """No level (daemon down, timeout, garbage) still draws the cell: a red
+    cross on it, and no percent beside it."""
+    failed = render([], battery=None, version="0.5.1",
+                    output_path=str(tmp_path / "failed.png"))
+    low = render([], battery=BatteryStatus(15, False), version="0.5.1",
+                 output_path=str(tmp_path / "low.png"))
+    reds, box = _red_box(failed)
+    assert reds
+    assert min(x for x, _ in reds) > WIDTH // 2
+    assert min(y for _, y in reds) >= HEIGHT - FOOTER_H - 4
+    assert _center_is_red(reds, box)
+    failed_w = box[2] - box[0]
+    _, low_box = _red_box(low)
+    assert failed_w <= (low_box[2] - low_box[0]) - 20
+    assert _colored(failed, PALETTE["yellow"]) == []
+
+
+def test_privacy_page_draws_a_red_cross_when_the_level_is_unreadable(tmp_path):
+    img = render_privacy(battery=None, version="0.5.1",
+                         output_path=str(tmp_path / "p.png"))
+    reds, box = _red_box(img)
+    assert reds
+    assert min(y for _, y in reds) >= HEIGHT - FOOTER_H - 4
+    assert _center_is_red(reds, box)
+
+
+def test_privacy_page_shows_a_low_battery(tmp_path):
+    img = render_privacy(battery=BatteryStatus(15, False), low_battery_percent=20,
+                         output_path=str(tmp_path / "p.png"), version="0.5.1")
+    assert _colored(img, PALETTE["red"])
 
 
 def test_privacy_page_does_not_show_the_location(tmp_path):

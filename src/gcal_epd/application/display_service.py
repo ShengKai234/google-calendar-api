@@ -3,9 +3,11 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import Callable
 
-from gcal_epd.config import DATA_DIR, font_path, output_path as _output_path
-from gcal_epd.infrastructure.panel_lock import PANEL_LOCK, panel_lock
+from gcal_epd.config import DATA_DIR, font_path, low_battery_percent, output_path as _output_path
+from gcal_epd.domain.battery import BatteryStatus
 from gcal_epd.domain.repositories import EventRepository, WeatherRepository
+from gcal_epd.infrastructure.panel_lock import PANEL_LOCK, panel_lock
+from gcal_epd.infrastructure.power.pisugar import read_battery_status
 from gcal_epd.render.draw import render, render_privacy
 from gcal_epd.version import version
 
@@ -53,6 +55,14 @@ def run(
         all_events.sort(key=lambda e: e.start)
 
     weather = weather_repo.fetch_weather() if weather_repo else None
+    # Before the panel lock: a missing pisugar-server must not hold the
+    # lock for its timeout, and must not stop the page.
+    try:
+        battery: BatteryStatus | None = read_battery_status()
+    except Exception as e:
+        log.warning("Battery level unavailable: %s", e)
+        battery = None
+    low_at = low_battery_percent(config)
 
     locked = push_display or is_private is not None
     lock = panel_lock((data_dir or DATA_DIR) / PANEL_LOCK) if locked else nullcontext()
@@ -62,11 +72,13 @@ def run(
             privacy, all_events = True, []
         if privacy:
             img = render_privacy(weather=weather, output_path=output_path, font_path=font,
-                                 version=version(project_root))
+                                 version=version(project_root), battery=battery,
+                                 low_battery_percent=low_at)
             log.info("Privacy page; preview saved to %s", output_path)
         else:
             img = render(all_events, weather=weather, output_path=output_path,
-                         font_path=font, version=version(project_root))
+                         font_path=font, version=version(project_root), battery=battery,
+                         low_battery_percent=low_at)
             log.info("Preview saved to %s", output_path)
 
         if push_display:

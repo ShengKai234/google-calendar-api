@@ -12,10 +12,13 @@ Two roots:
   config.local.toml. They survive every update. In a git checkout it is
   the checkout itself, so a development Pi works as before.
 """
+import logging
 import os
 import tomllib
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+log = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 DEFAULT_FEEDS_FILE = "ics_feeds.toml"
@@ -24,6 +27,7 @@ RELEASE_MARKER = "RELEASE"
 DEFAULT_SCHEDULE_FILE = "power_schedule.toml"
 DEFAULT_TIMEZONE = "Asia/Taipei"
 DEFAULT_BOARD = "auto"
+DEFAULT_LOW_BATTERY_PERCENT = 20
 
 
 def data_dir(root: Path = PROJECT_ROOT, env=os.environ) -> Path:
@@ -117,3 +121,18 @@ def power_timezone(config: dict) -> ZoneInfo:
 def power_board(config: dict) -> str:
     """Which wake-up board the Pi has, from [power] board."""
     return config.get("power", {}).get("board", DEFAULT_BOARD)
+
+
+def low_battery_percent(config: dict) -> float:
+    """When the footer battery mark turns into a warning, from
+    [display] low_battery_percent. Missing or unusable stays at 20:
+    a typo must not drop the warning or stop the refresh.
+    """
+    raw = config.get("display", {}).get("low_battery_percent", DEFAULT_LOW_BATTERY_PERCENT)
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not 0 <= raw <= 100:
+        log.warning(
+            "Ignoring [display] low_battery_percent = %r: expected a percent from 0 to 100.",
+            raw,
+        )
+        return float(DEFAULT_LOW_BATTERY_PERCENT)
+    return float(raw)
