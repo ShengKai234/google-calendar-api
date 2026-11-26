@@ -72,8 +72,11 @@ Raspberry Pi OS Lite card lacks, pinned in `deploy/sdcard/debs.lock`.
 | libsvtav1enc2 | 2.3.0+dfsg-1 | BSD-3-Clause-Clear | `apt-get source svt-av1=2.3.0+dfsg-1` |
 | libyuv0 | 0.0.1904.20250204-1 | BSD-3-Clause | `apt-get source libyuv=0.0.1904.20250204-1` |
 | watchdog | 5.16-1.1 | GPL-2.0-or-later | `apt-get source watchdog=5.16-1.1` |
-| pisugar-server | 2.3.5-1 | GPL-3.0 | https://github.com/PiSugar/pisugar-power-manager-rs/tree/v2.3.5 |
-| pisugar-poweroff | 2.3.5-1 | GPL-3.0 | https://github.com/PiSugar/pisugar-power-manager-rs/tree/v2.3.5 |
+| libonig5 | 6.9.9-1 | BSD-2-Clause | `apt-get source libonig=6.9.9-1` |
+| libjq1 | 1.7.1-6+deb13u4 | MIT | `apt-get source jq=1.7.1-6+deb13u4` |
+| jq | 1.7.1-6+deb13u4 | MIT | `apt-get source jq=1.7.1-6+deb13u4` |
+| pisugar-server | 2.4.0-1 | GPL-3.0 | https://github.com/PiSugar/pisugar-power-manager-rs/tree/v2.4.0 |
+| pisugar-poweroff | 2.4.0-1 | GPL-3.0 | https://github.com/PiSugar/pisugar-power-manager-rs/tree/v2.4.0 |
 
 The licenses are the main (`Files: *`) license in each package's own
 `copyright` file; some packages contain files under other licenses, listed
