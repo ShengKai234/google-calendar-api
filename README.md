@@ -196,6 +196,7 @@ location = "Taipei"
 output_path = "preview.png"           # last rendered image
 font_path = "assets/fonts/NotoSansCJKtc-Regular.otf"
 # frame_offset_px = [0, 0]            # move the frame window [right, down] in pixels
+# low_battery_percent = 20            # the battery turns red below this percentage
 ```
 
 Relative paths are taken from the checkout. If you change `feeds_file`,
@@ -217,6 +218,17 @@ frame_offset_px = [4, -2]
 ```
 
 x can be −52..53 and y −22..23; anything else is ignored with a warning.
+
+`low_battery_percent` sets when the footer's battery turns red. On every
+refresh the calendar asks pisugar-server (127.0.0.1:8423, waiting at most
+1 s) for the PiSugar's charge and draws it bottom right, left of the
+version: a battery cell and the percent (rounded), with a yellow bolt while
+charging. Below `low_battery_percent` (default 20, a whole number 0..100;
+anything else is ignored with a warning) the cell and the number are red.
+If the charge cannot be read (pisugar-server not running, no answer, a reply
+that is not a percentage), the cell gets a red X and no number, the journal
+gets one warning, and the calendar is drawn as usual. With
+`[power] board = "none"` (mains power, no battery) no battery is drawn.
 
 The feeds file, `config.local.toml` and the preview are this display's
 *data*. In a git checkout they sit in the checkout. In an installed release

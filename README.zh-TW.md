@@ -153,6 +153,7 @@ location = "Taipei"
 output_path = "preview.png"           # 最後一次畫出的圖
 font_path = "assets/fonts/NotoSansCJKtc-Regular.otf"
 # frame_offset_px = [0, 0]            # 相框開口位置微調 [往右, 往下]，單位像素
+# low_battery_percent = 20            # 電量低於這個百分比時，電池顯示成紅色
 ```
 
 相對路徑以專案資料夾為準。修改 `feeds_file` 之後，要重跑 `bash deploy/install.sh`，讓 unit 改看新的檔案。
@@ -167,6 +168,8 @@ frame_offset_px = [4, -2]
 ```
 
 x 可以是 −52..53，y 是 −22..23；超出範圍會被忽略並記一筆警告。
+
+`low_battery_percent` 決定頁尾的電池什麼時候變紅。每次更新畫面時，程式會向 pisugar-server（127.0.0.1:8423，最多等 1 秒）讀取 PiSugar 的電量，畫在右下角、版本號左邊：一個電池圖示加上百分比（四捨五入成整數），充電中時電池上有黃色閃電，電量低於 `low_battery_percent`（預設 20，必須是 0..100 的整數，其他值會被忽略並記一筆警告）時圖示和數字變成紅色。讀不到電量時（pisugar-server 沒在跑、沒有回應、回覆不是百分比），電池上畫一個紅色 X、不顯示數字，日誌記一筆警告，日曆照常畫出來。`[power] board = "none"`（插電、沒有電池）時不畫電池。
 
 日曆網址檔、`config.local.toml` 和預覽圖是這台機器的「資料」。用 git checkout 時它們在專案資料夾裡；安裝成 release 後（見[安裝成 release](#安裝成-release)），它們在 `/opt/e-pages/data/`，和程式分開，所以更新永遠不會動到它們。
 
