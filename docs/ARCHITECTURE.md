@@ -278,7 +278,8 @@ flowchart TB
   Q -->|"no"| RUN["display_service.run()"]
   RUN --> F1["ICSRepository.fetch_events() per feed"]
   F1 --> F2["OpenMeteoRepository.fetch_weather()"]
-  F2 --> F3["render(): build_layout(), draw"]
+  F2 --> BAT["read_battery_status(): PiSugar level<br/>1 s; no server, no mark"]
+  BAT --> F3["render(): build_layout(), draw"]
   F3 --> F4["push_to_display() with --display"]
 ```
 

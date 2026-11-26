@@ -11,7 +11,8 @@ Command names, arguments and reply formats are from the official repo,
 github.com/PiSugar/pisugar-power-manager-rs:
 
 - README.md, "Unix Domain Socket / Webscoket / TCP" command table:
-  `get battery`, `get battery_power_plugged`, `get rtc_time`,
+  `get battery`, `get battery_charging`, `get battery_power_plugged`,
+  `get rtc_time`,
   `get rtc_alarm_time`, `get rtc_alarm_enabled`, `get alarm_repeat`,
   `get model`, `rtc_pi2rtc`, `rtc_rtc2pi`,
   `rtc_alarm_set [ISO8601 time string] [repeat]` with the example
@@ -34,12 +35,19 @@ github.com/PiSugar/pisugar-power-manager-rs:
   in I2C register 0x08 (read about every 500 ms).
 - pisugar-core/src/lib.rs `write_alarm`: refused while `auto_power_on` is
   on ("auto_power_on is in conflict with alarm function").
+- `get battery_charging` is `battery_charging: true|false`. On a PiSugar 3
+  that flag is power-plugged AND charging-allowed
+  (pisugar-core/src/pisugar3.rs `PiSugar3Battery::is_charging`); the README
+  points new models at those two registers, and the server already combines
+  them into this one reply.
 """
 import logging
+import math
 import socket
 from datetime import datetime, timezone
 from typing import Callable
 
+from gcal_epd.domain.battery import BatteryStatus
 from gcal_epd.domain.power_ports import WakeBoardError
 
 log = logging.getLogger(__name__)
@@ -47,6 +55,7 @@ log = logging.getLogger(__name__)
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8423
 TIMEOUT = 5.0           # seconds; the server answers from memory or one I2C read
+BATTERY_READ_TIMEOUT = 1.0  # a refresh must not wait on a missing daemon
 EVERY_DAY = 0b1111111   # alarm repeat mask: all seven weekdays (README example 127)
 _DONE = "done"
 GESTURES = ("single", "double", "long")
@@ -157,6 +166,10 @@ class PiSugar:
     def power_plugged(self) -> bool:
         return parse_bool(self._get("battery_power_plugged"))
 
+    def charging(self) -> bool:
+        """True while the pack is taking a charge (`get battery_charging`)."""
+        return parse_bool(self._get("battery_charging"))
+
     def rtc_time(self) -> datetime:
         return parse_time(self._get("rtc_time"))
 
@@ -220,6 +233,46 @@ class PiSugar:
             raise ValueError(f"unknown button gesture {gesture!r}")
         self._do(f"set_button_shell {gesture} {command}")
         self._do(f"set_button_enable {gesture} 1")
+
+
+def read_battery_status(
+    *,
+    timeout: float = BATTERY_READ_TIMEOUT,
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    client: PiSugar | None = None,
+) -> BatteryStatus | None:
+    """The level to draw on this refresh, or None when it cannot be read.
+
+    One attempt. A missing pisugar-server, a timeout, or a reply that is
+    not a percent is logged once and swallowed: the page still renders,
+    without a battery mark. Charging is a second command on the same
+    timeout, and only after the level succeeded; if that reply is
+    unusable the level is still returned, with `charging` left unknown.
+    `client` skips the socket (tests). The power manager keeps the longer
+    `TIMEOUT`; this one is only for the page.
+    """
+    sugar = client if client is not None else PiSugar(TcpTransport(host, port, timeout=timeout))
+    try:
+        percent = sugar.battery()
+    except PiSugarError as e:
+        log.warning("Battery level unavailable: %s", e)
+        return None
+    if not math.isfinite(percent) or percent < 0 or percent > 100.5:
+        log.warning("Battery level unavailable: %r is not a percent", percent)
+        return None
+    percent = min(100.0, percent)
+    charging: bool | None
+    try:
+        charging = sugar.charging()
+    except PiSugarError:
+        charging = None
+    status = BatteryStatus(percent, charging)
+    if charging is True:
+        log.info("Battery %d%%, charging", status.shown_percent())
+    else:
+        log.info("Battery %d%%", status.shown_percent())
+    return status
 
 
 class PiSugar3Board:

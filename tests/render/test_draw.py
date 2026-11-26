@@ -5,6 +5,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from gcal_epd.domain.battery import BatteryStatus
 from gcal_epd.domain.event import CalendarEvent
 from gcal_epd.domain.weather import WeatherInfo
 from gcal_epd.infrastructure.open_meteo.repository import _WMO_CONDITION
@@ -225,6 +226,59 @@ def test_privacy_page_takes_no_events():
     """Nothing to leak: it is never given the events or calendar names."""
     params = inspect.signature(render_privacy).parameters
     assert "events" not in params
+
+
+def _colored(img, color):
+    width, height = img.size
+    return [(x, y) for y in range(height) for x in range(width) if img.getpixel((x, y)) == color]
+
+
+def test_healthy_battery_is_white_in_the_footer(tmp_path):
+    img = render([], battery=BatteryStatus(85, False), output_path=str(tmp_path / "out.png"),
+                 version="0.5.1")
+    assert _colored(img, PALETTE["white"])
+    assert _colored(img, PALETTE["red"]) == []
+    assert _colored(img, PALETTE["yellow"]) == []
+
+
+def test_low_battery_is_a_red_mark_on_the_right_of_the_footer(tmp_path):
+    img = render([], battery=BatteryStatus(15, False), low_battery_percent=20,
+                 output_path=str(tmp_path / "out.png"), version="0.5.1")
+    reds = _colored(img, PALETTE["red"])
+    assert reds
+    assert min(x for x, _ in reds) > WIDTH // 2
+    assert min(y for _, y in reds) >= HEIGHT - FOOTER_H - 4
+
+
+def test_the_warning_follows_the_shown_percent(tmp_path):
+    """19.5 prints as 20, which is not below 20. 19.4 prints as 19 and warns."""
+    at = render([], battery=BatteryStatus(19.5, False), low_battery_percent=20,
+                output_path=str(tmp_path / "at.png"))
+    below = render([], battery=BatteryStatus(19.4, False), low_battery_percent=20,
+                   output_path=str(tmp_path / "below.png"))
+    assert _colored(at, PALETTE["red"]) == []
+    assert _colored(below, PALETTE["red"])
+
+
+def test_charging_draws_a_yellow_bolt_beside_the_cell(tmp_path):
+    img = render([], battery=BatteryStatus(85, True), output_path=str(tmp_path / "out.png"))
+    bolts = _colored(img, PALETTE["yellow"])
+    assert bolts
+    assert min(x for x, _ in bolts) > WIDTH // 2
+    assert min(y for _, y in bolts) >= HEIGHT - FOOTER_H - 4
+
+
+def test_unknown_battery_draws_no_mark(tmp_path):
+    img = render([], battery=None, output_path=str(tmp_path / "out.png"))
+    assert _colored(img, PALETTE["red"]) == []
+    assert _colored(img, PALETTE["yellow"]) == []
+    assert _bottom_right(img) == {BG}
+
+
+def test_privacy_page_shows_a_low_battery(tmp_path):
+    img = render_privacy(battery=BatteryStatus(15, False), low_battery_percent=20,
+                         output_path=str(tmp_path / "p.png"), version="0.5.1")
+    assert _colored(img, PALETTE["red"])
 
 
 def test_privacy_page_does_not_show_the_location(tmp_path):

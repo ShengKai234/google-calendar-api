@@ -238,7 +238,8 @@ flowchart TB
   Q -->|"否"| RUN["display_service.run()"]
   RUN --> F1["每個日曆 ICSRepository.fetch_events()"]
   F1 --> F2["OpenMeteoRepository.fetch_weather()"]
-  F2 --> F3["render()：build_layout() 排版、畫圖"]
+  F2 --> BAT["read_battery_status()：PiSugar 電量<br/>1 秒；沒有伺服器就不畫"]
+  BAT --> F3["render()：build_layout() 排版、畫圖"]
   F3 --> F4["push_to_display()（有 --display 時）"]
 ```
 

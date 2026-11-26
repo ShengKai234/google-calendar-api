@@ -152,6 +152,7 @@ location = "Taipei"
 [display]
 output_path = "preview.png"           # 最後一次畫出的圖
 font_path = "assets/fonts/NotoSansCJKtc-Regular.otf"
+low_battery_percent = 20              # 頁尾電量低於此百分比時畫成警告
 # frame_offset_px = [0, 0]            # 相框開口位置微調 [往右, 往下]，單位像素
 ```
 
