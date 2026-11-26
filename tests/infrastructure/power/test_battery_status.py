@@ -281,6 +281,11 @@ def test_a_refresh_still_saves_the_page_when_pisugar_is_down(tmp_path, monkeypat
         )
     img = Image.open(tmp_path / "preview.png")
     assert img.size[0] > 0
-    colors = {c for _, c in img.getcolors(maxcolors=img.size[0] * img.size[1])}
-    assert PALETTE["red"] not in colors
+    reds = [(x, y) for y in range(img.size[1]) for x in range(img.size[0])
+            if img.getpixel((x, y)) == PALETTE["red"]]
+    assert reds, "a failed read draws a red cell, it does not leave the footer blank"
+    minx, maxx = min(p[0] for p in reds), max(p[0] for p in reds)
+    miny, maxy = min(p[1] for p in reds), max(p[1] for p in reds)
+    cx, cy = (minx + maxx) // 2, (miny + maxy) // 2
+    assert any(abs(x - cx) <= 2 and abs(y - cy) <= 2 for x, y in reds)
     assert len(_warnings(caplog)) == 1

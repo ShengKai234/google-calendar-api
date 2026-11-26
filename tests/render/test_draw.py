@@ -203,9 +203,11 @@ def test_version_is_drawn_bottom_right(tmp_path):
     assert PALETTE["white"] in _bottom_right(img)
 
 
-def test_no_version_leaves_bottom_right_blank(tmp_path):
+def test_no_version_leaves_no_white_type_bottom_right(tmp_path):
+    """No release label. An unread battery is a red cross there, not white type."""
     img = render([], output_path=str(tmp_path / "out.png"))
-    assert _bottom_right(img) == {BG}
+    assert PALETTE["white"] not in _bottom_right(img)
+    assert PALETTE["red"] in _bottom_right(img)
 
 
 # --- the privacy page ---
@@ -268,11 +270,45 @@ def test_charging_draws_a_yellow_bolt_beside_the_cell(tmp_path):
     assert min(y for _, y in bolts) >= HEIGHT - FOOTER_H - 4
 
 
-def test_unknown_battery_draws_no_mark(tmp_path):
-    img = render([], battery=None, output_path=str(tmp_path / "out.png"))
-    assert _colored(img, PALETTE["red"]) == []
-    assert _colored(img, PALETTE["yellow"]) == []
-    assert _bottom_right(img) == {BG}
+def _red_box(img):
+    reds = _colored(img, PALETTE["red"])
+    xs = [x for x, _ in reds]
+    ys = [y for _, y in reds]
+    return reds, (min(xs), min(ys), max(xs), max(ys))
+
+
+def _center_is_red(reds, box):
+    """The cross meets in the middle of the cell. An empty outline does not."""
+    minx, miny, maxx, maxy = box
+    cx, cy = (minx + maxx) // 2, (miny + maxy) // 2
+    return any(abs(x - cx) <= 2 and abs(y - cy) <= 2 for x, y in reds)
+
+
+def test_unreadable_battery_draws_a_red_cross_and_no_percent(tmp_path):
+    """No level (daemon down, timeout, garbage) still draws the cell: a red
+    cross on it, and no percent beside it."""
+    failed = render([], battery=None, version="0.5.1",
+                    output_path=str(tmp_path / "failed.png"))
+    low = render([], battery=BatteryStatus(15, False), version="0.5.1",
+                 output_path=str(tmp_path / "low.png"))
+    reds, box = _red_box(failed)
+    assert reds
+    assert min(x for x, _ in reds) > WIDTH // 2
+    assert min(y for _, y in reds) >= HEIGHT - FOOTER_H - 4
+    assert _center_is_red(reds, box)
+    failed_w = box[2] - box[0]
+    _, low_box = _red_box(low)
+    assert failed_w <= (low_box[2] - low_box[0]) - 20
+    assert _colored(failed, PALETTE["yellow"]) == []
+
+
+def test_privacy_page_draws_a_red_cross_when_the_level_is_unreadable(tmp_path):
+    img = render_privacy(battery=None, version="0.5.1",
+                         output_path=str(tmp_path / "p.png"))
+    reds, box = _red_box(img)
+    assert reds
+    assert min(y for _, y in reds) >= HEIGHT - FOOTER_H - 4
+    assert _center_is_red(reds, box)
 
 
 def test_privacy_page_shows_a_low_battery(tmp_path):

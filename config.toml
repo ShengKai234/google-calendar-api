@@ -16,6 +16,7 @@ location = "Taipei"
 output_path = "preview.png"
 font_path = "assets/fonts/NotoSansCJKtc-Regular.otf"
 # PiSugar level in the footer. The mark warns when it is below this percent.
+# If the level cannot be read, the same cell is drawn with a red cross and no percent.
 low_battery_percent = 20
 # Screens fit a 139 x 87 mm photo-frame opening (695 x 435 px, centred).
 # If the mat sits off-centre, move the window [right, down] in pixels,

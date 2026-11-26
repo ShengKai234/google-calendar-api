@@ -319,6 +319,29 @@ def _draw_charge_bolt(draw: ImageDraw.ImageDraw, cx: float, cy: float, size: flo
     )
 
 
+def _battery_geom(right: float, baseline: float):
+    """The cell, nub on the right, sitting on the footer baseline.
+
+    Returns body left/top/right/bottom, then the nub's left, right and height.
+    """
+    body_w, body_h = 30, 16
+    nub_w, nub_h = 3, 7
+    bottom = int(baseline) + 1
+    top = bottom - body_h
+    nub_right = int(right)
+    nub_left = nub_right - nub_w
+    body_right = nub_left - 2
+    body_left = body_right - body_w
+    return body_left, top, body_right, bottom, nub_left, nub_right, nub_h
+
+
+def _draw_battery_shell(draw: ImageDraw.ImageDraw, geom, color) -> None:
+    body_left, top, body_right, bottom, nub_left, nub_right, nub_h = geom
+    draw.rectangle([body_left, top, body_right, bottom], outline=color, width=2)
+    nub_top = top + (bottom - top - nub_h) // 2
+    draw.rectangle([nub_left, nub_top, nub_right, nub_top + nub_h], fill=color)
+
+
 def _draw_battery_icon(
     draw: ImageDraw.ImageDraw,
     right: float,
@@ -330,19 +353,11 @@ def _draw_battery_icon(
     """A cell whose right edge (the terminal nub) is at `right`, on the
     footer baseline. The fill is the level. A yellow bolt to its left
     means the pack is charging."""
-    body_w, body_h = 30, 16
-    nub_w, nub_h = 3, 7
-    bottom = int(baseline) + 1
-    top = bottom - body_h
-    nub_right = int(right)
-    nub_left = nub_right - nub_w
-    body_right = nub_left - 2
-    body_left = body_right - body_w
-    draw.rectangle([body_left, top, body_right, bottom], outline=color, width=2)
-    nub_top = top + (body_h - nub_h) // 2
-    draw.rectangle([nub_left, nub_top, nub_right, nub_top + nub_h], fill=color)
+    geom = _battery_geom(right, baseline)
+    body_left, top, body_right, bottom, *_ = geom
+    _draw_battery_shell(draw, geom, color)
     pad = 4
-    inner_w = body_w - 2 * pad
+    inner_w = (body_right - body_left) - 2 * pad
     level = max(0.0, min(100.0, percent))
     fill_w = round(inner_w * level / 100.0)
     if fill_w:
@@ -352,6 +367,27 @@ def _draw_battery_icon(
         )
     if charging:
         _draw_charge_bolt(draw, body_left - 9, (top + bottom) / 2, 13)
+
+
+def _draw_unreadable_battery(draw: ImageDraw.ImageDraw, right: float, baseline: float) -> None:
+    """The same cell, with a cross and no percent: the level could not be read.
+
+    Red on the black panel. No grey exists on the 7-color glass, and a thin
+    grey stroke would disappear into a refresh anyway.
+    """
+    color = PALETTE["red"]
+    geom = _battery_geom(right, baseline)
+    body_left, top, body_right, bottom, *_ = geom
+    _draw_battery_shell(draw, geom, color)
+    inset = 4
+    draw.line(
+        [(body_left + inset, top + inset), (body_right - inset, bottom - inset)],
+        fill=color, width=3,
+    )
+    draw.line(
+        [(body_left + inset, bottom - inset), (body_right - inset, top + inset)],
+        fill=color, width=3,
+    )
 
 
 def _draw_battery_readout(
@@ -388,7 +424,9 @@ def _draw_footer(draw: ImageDraw.ImageDraw, fonts: dict, now: datetime.datetime,
         label = f"v{version}"
         _text(draw, (right, y), label, fonts["footer"], FG, anchor="rs")
         right -= _textw(draw, label, fonts["footer"]) + 16
-    if battery is not None:
+    if battery is None:
+        _draw_unreadable_battery(draw, right, y)
+    else:
         _draw_battery_readout(draw, fonts, right, y, battery, low_battery_percent)
 
 

@@ -246,7 +246,8 @@ def read_battery_status(
 
     One attempt. A missing pisugar-server, a timeout, or a reply that is
     not a percent is logged once and swallowed: the page still renders,
-    without a battery mark. Charging is a second command on the same
+    and the footer draws the cell with a red cross and no percent.
+    Charging is a second command on the same
     timeout, and only after the level succeeded; if that reply is
     unusable the level is still returned, with `charging` left unknown.
     `client` skips the socket (tests). The power manager keeps the longer
