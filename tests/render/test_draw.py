@@ -3,8 +3,10 @@ import datetime
 import inspect
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageChops
 
+from gcal_epd.config import PROJECT_ROOT
+from gcal_epd.domain.battery import BatteryStatus
 from gcal_epd.domain.event import CalendarEvent
 from gcal_epd.domain.weather import WeatherInfo
 from gcal_epd.infrastructure.open_meteo.repository import _WMO_CONDITION
@@ -15,6 +17,9 @@ from gcal_epd.render.draw import (
     render_setup,
 )
 from gcal_epd.render.layout import BG, FOOTER_H, HEIGHT, PALETTE, WIDTH, TW_TZ
+
+
+FONT = str(PROJECT_ROOT / "assets" / "fonts" / "NotoSansCJKtc-Regular.otf")
 
 
 def _event(start: str, title: str = "Meeting", cal: str = "Work") -> CalendarEvent:
@@ -235,3 +240,71 @@ def test_privacy_page_does_not_show_the_location(tmp_path):
     b = render_privacy(weather=_weather(location="Somewhere Else Entirely"),
                        output_path=str(tmp_path / "b.png"), now=now)
     assert a.tobytes() == b.tobytes()
+
+
+# --- the battery, bottom right, left of the version ---
+
+def _footer_right(img):
+    return img.crop((WIDTH // 2, HEIGHT - FOOTER_H, WIDTH, HEIGHT))
+
+
+def _colors(img):
+    return {c for _, c in img.getcolors(maxcolors=WIDTH * HEIGHT)}
+
+
+def _battery_only(tmp_path, battery, **kw):
+    """The footer's right half with only the battery in it (no version)."""
+    return _footer_right(render([], battery=battery, output_path=str(tmp_path / "b.png"),
+                                font_path=FONT, **kw))
+
+
+def test_battery_drawn_in_white_when_not_low(tmp_path):
+    colors = _colors(_battery_only(tmp_path, BatteryStatus(85)))
+    assert PALETTE["white"] in colors
+    assert PALETTE["red"] not in colors
+    assert PALETTE["yellow"] not in colors
+
+
+def test_charging_battery_shows_a_yellow_bolt(tmp_path):
+    colors = _colors(_battery_only(tmp_path, BatteryStatus(85, charging=True)))
+    assert PALETTE["yellow"] in colors
+    assert PALETTE["white"] in colors
+
+
+def test_low_battery_icon_and_percent_are_red(tmp_path):
+    img = _battery_only(tmp_path, BatteryStatus(15))
+    assert PALETTE["red"] in _colors(img)
+    # Nothing white or grey: every pixel is red, black, or a blend of the two.
+    assert max(img.getchannel("G").getextrema()) <= PALETTE["red"][1]
+
+
+def test_low_threshold_comes_from_the_caller(tmp_path):
+    assert PALETTE["red"] in _colors(_battery_only(tmp_path, BatteryStatus(30),
+                                                   low_battery_percent=40))
+    assert PALETTE["red"] not in _colors(_battery_only(tmp_path, BatteryStatus(30),
+                                                       low_battery_percent=20))
+
+
+def test_unknown_battery_has_an_x_and_no_percent(tmp_path):
+    unknown = _battery_only(tmp_path, BatteryStatus.unknown())
+    shortest = _battery_only(tmp_path, BatteryStatus(5))   # "5%"
+    assert PALETTE["red"] in _colors(unknown)               # the X
+    assert PALETTE["yellow"] not in _colors(unknown)
+    unknown_w = unknown.getbbox()[2] - unknown.getbbox()[0]
+    shortest_w = shortest.getbbox()[2] - shortest.getbbox()[0]
+    assert unknown_w < shortest_w - 8
+
+
+def test_battery_sits_left_of_the_version(tmp_path):
+    kw = dict(output_path=str(tmp_path / "v.png"), font_path=FONT, version="0.5.1")
+    version_only = _footer_right(render([], **kw))
+    both = _footer_right(render([], battery=BatteryStatus(85, charging=True), **kw))
+    battery = ImageChops.difference(both, version_only).getbbox()
+    assert battery is not None
+    assert battery[2] < version_only.getbbox()[0]
+
+
+def test_privacy_page_shows_the_battery_too(tmp_path):
+    img = render_privacy(weather=None, output_path=str(tmp_path / "p.png"), font_path=FONT,
+                         battery=BatteryStatus(85, charging=True))
+    assert PALETTE["yellow"] in _colors(_footer_right(img))

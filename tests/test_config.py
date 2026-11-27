@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from gcal_epd import config
 
 
@@ -152,3 +154,26 @@ def test_wifi_setup_never_refers_to_main():
     """Covers every path, including _stash_feeds, which once imported main."""
     src = Path(__file__).parent.parent / "src" / "gcal_epd" / "wifi_setup.py"
     assert "gcal_epd.main" not in src.read_text()
+
+
+# --- [display] low_battery_percent ---
+
+def test_low_battery_percent_defaults_to_20():
+    assert config.low_battery_percent({}) == 20
+    assert config.low_battery_percent({"display": {}}) == 20
+
+
+def test_low_battery_percent_from_display_section():
+    assert config.low_battery_percent({"display": {"low_battery_percent": 35}}) == 35
+    assert config.low_battery_percent({"display": {"low_battery_percent": 0}}) == 0
+    assert config.low_battery_percent({"display": {"low_battery_percent": 100}}) == 100
+
+
+def test_shipped_config_keeps_the_default(tmp_path):
+    assert config.low_battery_percent(config.load_config(data=tmp_path)) == 20
+
+
+@pytest.mark.parametrize("raw", [-1, 101, 20.5, "20", True, [20]])
+def test_unusable_low_battery_percent_falls_back_with_a_warning(raw, caplog):
+    assert config.low_battery_percent({"display": {"low_battery_percent": raw}}) == 20
+    assert "low_battery_percent" in caplog.text

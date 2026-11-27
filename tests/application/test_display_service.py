@@ -320,3 +320,45 @@ def test_the_page_is_chosen_and_pushed_under_the_panel_lock(tmp_path, monkeypatc
                         project_root=tmp_path, push_display=True, data_dir=tmp_path,
                         is_private=is_private)
     assert order == ["lock", "check", "render", "push", "unlock"]
+
+
+# --- the battery in the footer ---
+
+def test_run_reads_the_battery_once_and_draws_it(tmp_path):
+    from gcal_epd.application.display_service import run
+    from gcal_epd.domain.battery import BatteryStatus
+
+    reads = []
+
+    def battery():
+        reads.append(1)
+        return BatteryStatus(15, charging=True)
+
+    config = {**_CONFIG, "display": {**_CONFIG["display"], "low_battery_percent": 30}}
+    with patch("gcal_epd.application.display_service.render") as mock_render:
+        run(event_repos=[], weather_repo=None, config=config, project_root=tmp_path,
+            battery=battery)
+    assert reads == [1]
+    kwargs = mock_render.call_args.kwargs
+    assert kwargs["battery"] == BatteryStatus(15, charging=True)
+    assert kwargs["low_battery_percent"] == 30
+
+
+def test_run_draws_the_battery_on_the_privacy_page(tmp_path):
+    from gcal_epd.application.display_service import run
+    from gcal_epd.domain.battery import BatteryStatus
+
+    with patch("gcal_epd.application.display_service.render_privacy") as mock_privacy:
+        run(event_repos=[], weather_repo=None, config=_CONFIG, project_root=tmp_path,
+            privacy=True, battery=BatteryStatus.unknown)
+    kwargs = mock_privacy.call_args.kwargs
+    assert kwargs["battery"] == BatteryStatus.unknown()
+    assert kwargs["low_battery_percent"] == 20
+
+
+def test_run_without_a_battery_draws_none(tmp_path):
+    from gcal_epd.application.display_service import run
+
+    with patch("gcal_epd.application.display_service.render") as mock_render:
+        run(event_repos=[], weather_repo=None, config=_CONFIG, project_root=tmp_path)
+    assert mock_render.call_args.kwargs["battery"] is None

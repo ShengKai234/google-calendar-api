@@ -201,3 +201,22 @@ def test_privacy_is_read_before_the_feeds(harness, monkeypatch):
     monkeypatch.setattr(main_mod, "run_display", lambda **kw: None)
     harness("--display", "--no-setup")
     assert seen and all(seen)
+
+
+# --- the battery (PiSugar) in the footer ---
+
+def test_refresh_reads_the_pisugar_battery(harness, monkeypatch):
+    from gcal_epd.infrastructure.power.battery import read_battery
+    seen = {}
+    monkeypatch.setattr(main_mod, "run_display", lambda **kw: seen.update(kw))
+    harness("--no-setup")
+    assert seen["battery"] is read_battery
+
+
+def test_mains_powered_display_shows_no_battery(harness, monkeypatch):
+    """[power] board = "none": there is no battery to show, so no X either."""
+    monkeypatch.setattr(main_mod, "load_config", lambda: {"power": {"board": "none"}})
+    seen = {}
+    monkeypatch.setattr(main_mod, "run_display", lambda **kw: seen.update(kw))
+    harness("--no-setup")
+    assert seen["battery"] is None

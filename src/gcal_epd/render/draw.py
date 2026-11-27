@@ -10,6 +10,7 @@ import datetime
 
 from PIL import Image, ImageDraw, ImageFont
 
+from gcal_epd.domain.battery import BatteryStatus
 from gcal_epd.domain.event import CalendarEvent
 from gcal_epd.domain.weather import WeatherInfo
 from gcal_epd.render.layout import (
@@ -302,14 +303,50 @@ def _draw_header(
             _draw_weather_icon(draw, kind, icon_x, mid - icon_size / 2, icon_size)
 
 
+_CELL_W, _CELL_H, _NUB_W, _NUB_H = 22, 11, 2, 5   # the footer's battery, in px
+
+
+def _draw_battery(draw: ImageDraw.ImageDraw, right: float, y: float, battery: BatteryStatus,
+                  low_percent: int, font) -> None:
+    """A battery cell and its percent, ending at `right`, sitting on baseline `y`.
+
+    Red below `low_percent`; a yellow bolt while charging; unreadable: a red
+    X on the cell and no number.
+    """
+    color = PALETTE["red"] if battery.is_low(low_percent) else FG
+    if battery.known:
+        label = f"{battery.shown_percent}%"
+        _text(draw, (right, y), label, font, color, anchor="rs")
+        right -= _textw(draw, label, font) + 4
+    x1 = right - _NUB_W
+    x0, y0, y1 = x1 - _CELL_W, y - _CELL_H, y
+    mid = (y0 + y1) / 2
+    draw.rectangle([x0, y0, x1, y1], outline=color, width=1)
+    draw.rectangle([x1, mid - _NUB_H / 2, right, mid + _NUB_H / 2], fill=color)
+    if not battery.known:
+        for a, b in (((x0 + 4, y0 + 2), (x1 - 4, y1 - 2)), ((x0 + 4, y1 - 2), (x1 - 4, y0 + 2))):
+            draw.line([a, b], fill=PALETTE["red"], width=2)
+    elif battery.charging:
+        cx = (x0 + x1) / 2
+        draw.polygon([(cx + 2, y0 + 1), (cx - 4, mid + 1), (cx, mid + 1),
+                      (cx - 2, y1 - 1), (cx + 4, mid - 1), (cx, mid - 1)],
+                     fill=PALETTE["yellow"])
+
+
 def _draw_footer(draw: ImageDraw.ImageDraw, fonts: dict, now: datetime.datetime,
-                 version: str = "") -> None:
+                 version: str = "", battery: BatteryStatus | None = None,
+                 low_battery_percent: int = 20) -> None:
     # Baseline-anchored so the glyphs end above the mat's edge, PADDING up.
     y = HEIGHT - PADDING - 2
     _text(draw, (COL_DATE_X, y), f"Updated {now.strftime('%H:%M')}", fonts["footer"], FG,
           anchor="ls")
+    right = WIDTH - PADDING - 6
     if version:   # bottom right: which release drew this
-        _text(draw, (WIDTH - PADDING - 6, y), f"v{version}", fonts["footer"], FG, anchor="rs")
+        label = f"v{version}"
+        _text(draw, (right, y), label, fonts["footer"], FG, anchor="rs")
+        right -= _textw(draw, label, fonts["footer"]) + 10
+    if battery is not None:   # left of the version: when to charge the PiSugar
+        _draw_battery(draw, right, y, battery, low_battery_percent, fonts["footer"])
 
 
 def render(
@@ -318,6 +355,8 @@ def render(
     output_path: str = "preview.png",
     font_path: str = "",
     version: str = "",
+    battery: BatteryStatus | None = None,
+    low_battery_percent: int = 20,
 ) -> Image.Image:
     img = Image.new("RGB", (WIDTH, HEIGHT), BG)
     draw = ImageDraw.Draw(img)
@@ -352,7 +391,7 @@ def render(
             fill=FG, width=1,
         )
 
-    _draw_footer(draw, fonts, now, version)
+    _draw_footer(draw, fonts, now, version, battery, low_battery_percent)
 
     img.save(output_path)
     return img
@@ -364,6 +403,8 @@ def render_privacy(
     font_path: str = "",
     version: str = "",
     now: datetime.datetime | None = None,
+    battery: BatteryStatus | None = None,
+    low_battery_percent: int = 20,
 ) -> Image.Image:
     """The privacy page: today's date and weather, nothing else.
 
@@ -420,7 +461,7 @@ def render_privacy(
         x += small + 5
         _text(draw, (x, y), pop, fonts["metric"], FG, anchor="lm")
 
-    _draw_footer(draw, fonts, now, version)
+    _draw_footer(draw, fonts, now, version, battery, low_battery_percent)
 
     if output_path:
         img.save(output_path)

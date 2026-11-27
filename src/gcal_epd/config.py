@@ -12,10 +12,13 @@ Two roots:
   config.local.toml. They survive every update. In a git checkout it is
   the checkout itself, so a development Pi works as before.
 """
+import logging
 import os
 import tomllib
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+log = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 DEFAULT_FEEDS_FILE = "ics_feeds.toml"
@@ -24,6 +27,7 @@ RELEASE_MARKER = "RELEASE"
 DEFAULT_SCHEDULE_FILE = "power_schedule.toml"
 DEFAULT_TIMEZONE = "Asia/Taipei"
 DEFAULT_BOARD = "auto"
+DEFAULT_LOW_BATTERY_PERCENT = 20
 
 
 def data_dir(root: Path = PROJECT_ROOT, env=os.environ) -> Path:
@@ -117,3 +121,17 @@ def power_timezone(config: dict) -> ZoneInfo:
 def power_board(config: dict) -> str:
     """Which wake-up board the Pi has, from [power] board."""
     return config.get("power", {}).get("board", DEFAULT_BOARD)
+
+
+def low_battery_percent(config: dict) -> int:
+    """[display] low_battery_percent: below it the footer's battery turns red.
+
+    A whole number 0..100; anything else is logged and the default used, so
+    a typo never keeps the calendar off the panel.
+    """
+    raw = config.get("display", {}).get("low_battery_percent", DEFAULT_LOW_BATTERY_PERCENT)
+    if isinstance(raw, int) and not isinstance(raw, bool) and 0 <= raw <= 100:
+        return raw
+    log.warning("Ignoring [display] low_battery_percent = %r: expected a whole number "
+                "0..100; using %d.", raw, DEFAULT_LOW_BATTERY_PERCENT)
+    return DEFAULT_LOW_BATTERY_PERCENT
